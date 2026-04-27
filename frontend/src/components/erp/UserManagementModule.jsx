@@ -5,6 +5,7 @@ import DataTable from './DataTable';
 import Modal from './Modal';
 import StatusBadge from './StatusBadge';
 import ConfirmDialog from './ConfirmDialog';
+import { apiGet, apiPost, apiPut, apiDelete } from '../../lib/api';
 
 const SYSTEM_ROLES = ['admin', 'vendor', 'buyer', 'superadmin'];
 
@@ -23,32 +24,30 @@ export default function UserManagementModule({ token }) {
 
   const fetchUsers = async () => {
     setLoading(true);
-    const res = await fetch('/api/users', { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    setUsers(Array.isArray(data) ? data : []);
+    try {
+      const data = await apiGet('/users');
+      setUsers(Array.isArray(data) ? data : []);
+    } catch (e) { setUsers([]); }
     setLoading(false);
   };
 
   const fetchRoles = async () => {
     try {
-      const res = await fetch('/api/roles', { headers: { Authorization: `Bearer ${token}` } });
-      const data = await res.json();
+      const data = await apiGet('/roles');
       setCustomRoles(Array.isArray(data) ? data : []);
     } catch (e) { console.error(e); }
   };
 
   const fetchVendors = async () => {
     try {
-      const res = await fetch('/api/garments', { headers: { Authorization: `Bearer ${token}` } });
-      const data = await res.json();
+      const data = await apiGet('/garments');
       setVendors(Array.isArray(data) ? data.filter(v => v.status === 'active') : []);
     } catch (e) { console.error(e); }
   };
 
   const fetchBuyers = async () => {
     try {
-      const res = await fetch('/api/buyers', { headers: { Authorization: `Bearer ${token}` } });
-      const data = await res.json();
+      const data = await apiGet('/buyers');
       setBuyersList(Array.isArray(data) ? data.filter(b => b.status === 'active') : []);
     } catch (e) { console.error(e); }
   };
@@ -78,31 +77,32 @@ export default function UserManagementModule({ token }) {
       const buyer = buyersList.find(b => b.id === payload.buyer_id);
       if (buyer) payload.customer_name = buyer.buyer_name;
     }
-    const url = editData ? `/api/users/${editData.id}` : '/api/users';
-    const method = editData ? 'PUT' : 'POST';
-    await fetch(url, {
-      method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify(payload)
-    });
-    setShowModal(false);
-    fetchUsers();
+    try {
+      if (editData) {
+        await apiPut(`/users/${editData.id}`, payload);
+      } else {
+        await apiPost('/users', payload);
+      }
+      setShowModal(false);
+      fetchUsers();
+    } catch (err) { alert(err.message || 'Gagal menyimpan user'); }
   };
 
   const toggleStatus = async (row) => {
     const newStatus = row.status === 'active' ? 'inactive' : 'active';
-    await fetch(`/api/users/${row.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ status: newStatus })
-    });
-    fetchUsers();
+    try {
+      await apiPut(`/users/${row.id}`, { status: newStatus });
+      fetchUsers();
+    } catch (e) { alert(e.message || 'Gagal mengubah status'); }
   };
 
   const handleDelete = async () => {
     if (!confirmDelete) return;
-    await fetch(`/api/users/${confirmDelete.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
-    setConfirmDelete(null);
-    fetchUsers();
+    try {
+      await apiDelete(`/users/${confirmDelete.id}`);
+      setConfirmDelete(null);
+      fetchUsers();
+    } catch (e) { alert(e.message || 'Gagal menghapus user'); }
   };
 
   const roleColors = {

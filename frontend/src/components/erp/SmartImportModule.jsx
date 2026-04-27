@@ -7,8 +7,7 @@ import {
   Shirt, ClipboardList, BookOpen, Check, Loader2, ToggleLeft, ToggleRight,
   WifiOff
 } from 'lucide-react';
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+import { apiGet, apiPost, apiDelete } from '../../lib/api';
 
 const DATA_TYPES = [
   { id: 'production_po', label: 'Production PO', icon: ClipboardList, color: 'blue', desc: 'Import PO dengan item produk' },
@@ -159,8 +158,6 @@ export default function SmartImportModule({ token }) {
   const [presets, setPresets] = useState([]);
   const [showPresets, setShowPresets] = useState(false);
 
-  const authHeaders = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
-
   // ── Step 1: Upload ───────────────────────────────────────────────────────
   const handleUpload = async () => {
     if (!selectedFile) return toast.error('Pilih file terlebih dahulu');
@@ -170,13 +167,7 @@ export default function SmartImportModule({ token }) {
       const formData = new FormData();
       formData.append('file', selectedFile);
       formData.append('data_type', selectedDataType);
-      const res = await fetch(`${BACKEND_URL}/api/smart-import/upload`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Upload gagal');
+      const data = await apiPost('/smart-import/upload', formData);
       setSessionInfo(data);
       toast.success(`File '${data.filename}' berhasil diupload`);
       await analyzeFile(data.session_id, data.file_type);
@@ -197,13 +188,7 @@ export default function SmartImportModule({ token }) {
         return;
       }
       // Excel/CSV
-      const res = await fetch(`${BACKEND_URL}/api/smart-import/analyze`, {
-        method: 'POST',
-        headers: authHeaders,
-        body: JSON.stringify({ session_id: sessionId, data_type: selectedDataType, use_llm: useAI })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Analisis gagal');
+      const data = await apiPost('/smart-import/analyze', { session_id: sessionId, data_type: selectedDataType, use_llm: useAI });
       setAnalysisResult(data);
       // Initialize mapping from suggestions
       const initMapping = {};
@@ -229,19 +214,12 @@ export default function SmartImportModule({ token }) {
     if (!sessionInfo) return;
     setEnhancingLLM(true);
     try {
-      const lowConf = analysisResult?.low_confidence_headers || [];
-      const res = await fetch(`${BACKEND_URL}/api/smart-import/enhance-mapping`, {
-        method: 'POST',
-        headers: authHeaders,
-        body: JSON.stringify({
-          session_id: sessionInfo.session_id,
-          headers: analysisResult?.headers || [],
-          data_type: selectedDataType,
-          sample_rows: analysisResult?.sample_rows || []
-        })
+      const data = await apiPost('/smart-import/enhance-mapping', {
+        session_id: sessionInfo.session_id,
+        headers: analysisResult?.headers || [],
+        data_type: selectedDataType,
+        sample_rows: analysisResult?.sample_rows || []
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'LLM enhance gagal');
       
       const enhanced = data.enhanced_mapping || {};
       setColumnMapping(prev => {
@@ -274,13 +252,7 @@ export default function SmartImportModule({ token }) {
     setLoading(true);
     setLoadingMsg(useAI ? 'Mengekstrak data dengan AI Vision...' : 'Membaca tabel dari PDF...');
     try {
-      const res = await fetch(`${BACKEND_URL}/api/smart-import/ocr`, {
-        method: 'POST',
-        headers: authHeaders,
-        body: JSON.stringify({ session_id: sessionInfo.session_id, data_type: selectedDataType, use_llm: useAI })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'OCR gagal');
+      const data = await apiPost('/smart-import/ocr', { session_id: sessionInfo.session_id, data_type: selectedDataType, use_llm: useAI });
       setOcrRows(data.rows || []);
       if (data.warnings?.length) data.warnings.forEach(w => toast.warning(w));
       toast.success(`Berhasil mengekstrak ${data.total} baris data`);
@@ -294,17 +266,11 @@ export default function SmartImportModule({ token }) {
   const handleSavePreset = async () => {
     if (!savePresetName.trim()) return toast.error('Nama preset wajib diisi');
     try {
-      const res = await fetch(`${BACKEND_URL}/api/smart-import/presets`, {
-        method: 'POST',
-        headers: authHeaders,
-        body: JSON.stringify({
-          name: savePresetName,
-          data_type: selectedDataType,
-          mapping: columnMapping
-        })
+      await apiPost('/smart-import/presets', {
+        name: savePresetName,
+        data_type: selectedDataType,
+        mapping: columnMapping
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail);
       toast.success(`Preset "${savePresetName}" tersimpan!`);
       setSavePresetName('');
       setShowSavePreset(false);
@@ -324,13 +290,7 @@ export default function SmartImportModule({ token }) {
         body.session_id = sessionInfo?.session_id;
         body.mapping = columnMapping;
       }
-      const res = await fetch(`${BACKEND_URL}/api/smart-import/preview`, {
-        method: 'POST',
-        headers: authHeaders,
-        body: JSON.stringify(body)
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Preview gagal');
+      const data = await apiPost('/smart-import/preview', body);
       setPreviewData(data);
       setCurrentPage(page);
     } catch (e) {
@@ -402,13 +362,7 @@ export default function SmartImportModule({ token }) {
         body.session_id = sessionInfo?.session_id;
         body.mapping = columnMapping;
       }
-      const res = await fetch(`${BACKEND_URL}/api/smart-import/commit`, {
-        method: 'POST',
-        headers: authHeaders,
-        body: JSON.stringify(body)
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Import gagal');
+      const data = await apiPost('/smart-import/commit', body);
       setImportResult(data);
       setStep(5);
       toast.success(data.message);
@@ -1116,10 +1070,7 @@ export default function SmartImportModule({ token }) {
   // ── Presets Panel ─────────────────────────────────────────────────────────
   const loadPresets = async () => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/smart-import/presets?data_type=${selectedDataType}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const data = await res.json();
+      const data = await apiGet(`/smart-import/presets?data_type=${selectedDataType}`);
       setPresets(Array.isArray(data) ? data : []);
     } catch (e) {
       toast.error('Gagal memuat preset');
@@ -1129,10 +1080,7 @@ export default function SmartImportModule({ token }) {
   const deletePreset = async (id) => {
     if (!window.confirm) return;
     try {
-      await fetch(`${BACKEND_URL}/api/smart-import/presets/${id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await apiDelete(`/smart-import/presets/${id}`);
       toast.success('Preset dihapus');
       loadPresets();
     } catch (e) {

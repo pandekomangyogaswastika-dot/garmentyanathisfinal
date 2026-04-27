@@ -9,6 +9,7 @@ import POWorkflowIndicator from './POWorkflowIndicator';
 import FileAttachmentPanel from './FileAttachmentPanel';
 import SearchableSelect from './SearchableSelect';
 import ImportExportPanel from './ImportExportPanel';
+import { apiGet, apiPost, apiPut, apiDelete, apiFetch } from '../../lib/api';
 
 const STATUS_OPTIONS = ['Draft', 'Confirmed', 'Distributed', 'In Production', 'Completed', 'Closed'];
 const CLOSE_REASONS = ['Under Production', 'Over Production', 'Price Adjustment', 'Customer Agreement', 'Other'];
@@ -50,11 +51,7 @@ export default function ProductionPOModule({ token, userRole, hasPerm = () => fa
     if (sort_dir) params.set('sort_dir', sort_dir);
     if (search) params.set('search', search);
     if (filterStatus) params.set('status', filterStatus);
-    const res = await fetch(`/api/production-pos?${params.toString()}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error('Gagal memuat PO');
-    const env = await res.json();
+    const env = await apiGet(`/production-pos?${params.toString()}`);
     // Keep `pos` array around so `expandedRowRender` can show item details
     const items = Array.isArray(env?.items) ? env.items : (Array.isArray(env) ? env : []);
     setPOs(items);
@@ -63,37 +60,38 @@ export default function ProductionPOModule({ token, userRole, hasPerm = () => fa
 
   const fetchBuyers = async () => {
     try {
-      const res = await fetch('/api/buyers', { headers: { Authorization: `Bearer ${token}` } });
-      const data = await res.json();
+      const data = await apiGet('/buyers');
       setBuyers(Array.isArray(data) ? data.filter(b => b.status === 'active') : []);
     } catch (e) { console.error(e); }
   };
 
   const fetchAccessories = async () => {
     try {
-      const res = await fetch('/api/accessories', { headers: { Authorization: `Bearer ${token}` } });
-      const data = await res.json();
+      const data = await apiGet('/accessories');
       setAccessories(Array.isArray(data) ? data.filter(a => a.status === 'active') : []);
     } catch (e) { console.error(e); }
   };
 
   const fetchVendors = async () => {
-    const res = await fetch('/api/garments', { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    setVendors(Array.isArray(data) ? data.filter(g => g.status === 'active') : []);
+    try {
+      const data = await apiGet('/garments');
+      setVendors(Array.isArray(data) ? data.filter(g => g.status === 'active') : []);
+    } catch (e) { setVendors([]); }
   };
 
   const fetchProducts = async () => {
-    const res = await fetch('/api/products', { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    setProducts(Array.isArray(data) ? data.filter(p => p.status === 'active') : []);
+    try {
+      const data = await apiGet('/products');
+      setProducts(Array.isArray(data) ? data.filter(p => p.status === 'active') : []);
+    } catch (e) { setProducts([]); }
   };
 
   const fetchVariantsForProduct = async (productId) => {
     if (!productId) { setVariants([]); return; }
-    const res = await fetch(`/api/product-variants?product_id=${productId}`, { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    setVariants(Array.isArray(data) ? data : []);
+    try {
+      const data = await apiGet(`/product-variants?product_id=${productId}`);
+      setVariants(Array.isArray(data) ? data : []);
+    } catch (e) { setVariants([]); }
   };
 
   const openCreate = () => {
@@ -143,9 +141,10 @@ export default function ProductionPOModule({ token, userRole, hasPerm = () => fa
       newItems[idx].selling_price_snapshot = product?.selling_price || '';
       newItems[idx].variant_id = ''; newItems[idx].size = ''; newItems[idx].color = ''; newItems[idx].sku = '';
       if (value) {
-        const res = await fetch(`/api/product-variants?product_id=${value}`, { headers: { Authorization: `Bearer ${token}` } });
-        const varData = await res.json();
-        setVariants(Array.isArray(varData) ? varData : []);
+        try {
+          const varData = await apiGet(`/product-variants?product_id=${value}`);
+          setVariants(Array.isArray(varData) ? varData : []);
+        } catch (e) { setVariants([]); }
       }
     }
     if (field === 'variant_id' && value) {
@@ -169,47 +168,46 @@ export default function ProductionPOModule({ token, userRole, hasPerm = () => fa
       .filter(a => a.accessory_name || a.accessory_id)
       .map(a => ({ ...a, qty_needed: Number(a.qty_needed) || 0 }));
     const payload = { ...form, items: itemsPayload, po_accessories: accPayload };
-    const url = editData ? `/api/production-pos/${editData.id}` : '/api/production-pos';
-    const method = editData ? 'PUT' : 'POST';
-    const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(payload) });
-    const data = await res.json();
-    if (!res.ok) { alert(data.detail || data.error || 'Gagal menyimpan PO'); return; }
-    // For create path, backend doesn't accept po_accessories in POST; keep legacy secondary call
-    if (!editData && accPayload.length > 0) {
-      await fetch('/api/po-accessories', {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ po_id: data.id, items: accPayload })
-      });
-    }
-    setShowModal(false);
-    refetchPOs();
+    try {
+      const data = editData
+        ? await apiPut(`/production-pos/${editData.id}`, payload)
+        : await apiPost('/production-pos', payload);
+      // For create path, backend doesn't accept po_accessories in POST; keep legacy secondary call
+      if (!editData && accPayload.length > 0) {
+        try {
+          await apiPost('/po-accessories', { po_id: data.id, items: accPayload });
+        } catch (e) { /* non-critical */ }
+      }
+      setShowModal(false);
+      refetchPOs();
+    } catch (err) { alert(err.message || 'Gagal menyimpan PO'); }
   };
 
   const openDetail = async (row) => {
-    const res = await fetch(`/api/production-pos/${row.id}`, { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    setDetailData(data);
-    setShowDetail(true);
+    try {
+      const data = await apiGet(`/production-pos/${row.id}`);
+      setDetailData(data);
+      setShowDetail(true);
+    } catch (e) { alert(e.message || 'Gagal memuat detail'); }
   };
 
   const openEdit = async (row) => {
     // Phase 8.6 — Load full PO detail (items + po_accessories) so user can edit everything.
     try {
-      const [poRes, itemsStatsRes] = await Promise.all([
-        fetch(`/api/production-pos/${row.id}`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`/api/po-items-produced?po_id=${row.id}`, { headers: { Authorization: `Bearer ${token}` } }),
+      const [poData, statsData] = await Promise.all([
+        apiGet(`/production-pos/${row.id}`),
+        apiGet(`/po-items-produced?po_id=${row.id}`),
       ]);
-      const poData = await poRes.json();
-      const statsData = await itemsStatsRes.json();
       const statsById = {};
       (Array.isArray(statsData) ? statsData : []).forEach(s => { statsById[s.id] = s; });
       // fetch variants list used by each item (for variant dropdown options)
       const allVariants = [];
       for (const it of (poData.items || [])) {
         if (it.product_id) {
-          const vr = await fetch(`/api/product-variants?product_id=${it.product_id}`, { headers: { Authorization: `Bearer ${token}` } });
-          const vdata = await vr.json();
-          if (Array.isArray(vdata)) allVariants.push(...vdata);
+          try {
+            const vdata = await apiGet(`/product-variants?product_id=${it.product_id}`);
+            if (Array.isArray(vdata)) allVariants.push(...vdata);
+          } catch (e) { /* ignore */ }
         }
       }
       // dedup variants by id
@@ -238,8 +236,7 @@ export default function ProductionPOModule({ token, userRole, hasPerm = () => fa
         };
       });
       // Additionally fetch po-items to discover vendor-ship amount per item
-      const piRes = await fetch(`/api/po-items?po_id=${row.id}`, { headers: { Authorization: `Bearer ${token}` } });
-      const piData = await piRes.json();
+      const piData = await apiGet(`/po-items?po_id=${row.id}`);
       const vendorSentById = {};
       (Array.isArray(piData) ? piData : []).forEach(pi => { vendorSentById[pi.id] = pi.total_sent_to_vendor || 0; });
       mappedItems.forEach(m => {
@@ -278,15 +275,20 @@ export default function ProductionPOModule({ token, userRole, hasPerm = () => fa
 
   const handleClosePO = async (e) => {
     e.preventDefault();
-    const res = await fetch(`/api/production-pos/${closeTargetPO.id}/close`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(closeForm) });
-    if (res.ok) { setShowCloseModal(false); refetchPOs(); }
+    try {
+      await apiPost(`/production-pos/${closeTargetPO.id}/close`, closeForm);
+      setShowCloseModal(false);
+      refetchPOs();
+    } catch (e) { alert(e.message || 'Gagal menutup PO'); }
   };
 
   const handleDelete = async () => {
     if (!confirmDelete) return;
-    await fetch(`/api/production-pos/${confirmDelete.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
-    setConfirmDelete(null);
-    refetchPOs();
+    try {
+      await apiDelete(`/production-pos/${confirmDelete.id}`);
+      setConfirmDelete(null);
+      refetchPOs();
+    } catch (e) { alert(e.message || 'Gagal menghapus PO'); }
   };
 
   const [expandedPOs, setExpandedPOs] = useState({});
@@ -686,9 +688,7 @@ export default function ProductionPOModule({ token, userRole, hasPerm = () => fa
               <button
                 onClick={async () => {
                   try {
-                    const res = await fetch(`/api/export-pdf?type=production-po&id=${detailData.id}`, {
-                      headers: { Authorization: `Bearer ${token}` }
-                    });
+                    const res = await apiFetch(`/export-pdf?type=production-po&id=${detailData.id}`);
                     if (!res.ok) { alert('Gagal export PDF'); return; }
                     const blob = await res.blob();
                     const url = URL.createObjectURL(blob);

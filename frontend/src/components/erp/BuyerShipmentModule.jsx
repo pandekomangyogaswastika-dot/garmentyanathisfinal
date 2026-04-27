@@ -8,6 +8,7 @@ import StatusBadge from './StatusBadge';
 import ConfirmDialog from './ConfirmDialog';
 import FileAttachmentPanel from './FileAttachmentPanel';
 import ImportExportPanel from './ImportExportPanel';
+import { apiGet, apiPost, apiDelete, apiFetch } from '../../lib/api';
 
 export default function BuyerShipmentModule({ token, userRole, hasPerm = () => false }) {
   const [shipments, setShipments] = useState([]);
@@ -35,40 +36,43 @@ export default function BuyerShipmentModule({ token, userRole, hasPerm = () => f
 
   const fetchAll = async () => {
     setLoading(true);
-    const [sRes, pRes] = await Promise.all([
-      fetch('/api/buyer-shipments', { headers: { Authorization: `Bearer ${token}` } }),
-      fetch('/api/production-pos?status=In Production', { headers: { Authorization: `Bearer ${token}` } })
-    ]);
-    const [sData, pData] = await Promise.all([sRes.json(), pRes.json()]);
-    setShipments(Array.isArray(sData) ? sData : []);
-    const allPOsRes = await fetch('/api/production-pos', { headers: { Authorization: `Bearer ${token}` } });
-    const allPOs = await allPOsRes.json();
-    // Filter PO yang masih punya sisa untuk dikirim (remaining_qty_to_ship > 0)
-    setPOs(Array.isArray(allPOs) ? allPOs.filter(p => 
-      ['In Production', 'Completed', 'Distributed'].includes(p.status) && 
-      (p.remaining_qty_to_ship || p.total_qty) > 0
-    ) : []);
+    try {
+      const [sData, pData] = await Promise.all([
+        apiGet('/buyer-shipments'),
+        apiGet('/production-pos?status=In Production'),
+      ]);
+      setShipments(Array.isArray(sData) ? sData : []);
+      const allPOs = await apiGet('/production-pos');
+      // Filter PO yang masih punya sisa untuk dikirim (remaining_qty_to_ship > 0)
+      setPOs(Array.isArray(allPOs) ? allPOs.filter(p => 
+        ['In Production', 'Completed', 'Distributed'].includes(p.status) && 
+        (p.remaining_qty_to_ship || p.total_qty) > 0
+      ) : []);
+    } catch (e) {
+      setShipments([]); setPOs([]);
+    }
     setLoading(false);
   };
 
   const loadPOItems = async (poId) => {
     if (!poId) { setPoItems([]); setSelectedPO(null); setForm(f => ({...f, po_id: '', items: []})); return; }
-    const res = await fetch(`/api/po-items?po_id=${poId}`, { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    const po = pos.find(p => p.id === poId);
-    setSelectedPO(po);
-    setPoItems(Array.isArray(data) ? data : []);
-    const items = (Array.isArray(data) ? data : []).map(pi => ({
-      po_item_id: pi.id,
-      product_name: pi.product_name,
-      sku: pi.sku || '',
-      size: pi.size || '',
-      color: pi.color || '',
-      serial_number: pi.serial_number || '',
-      ordered_qty: pi.qty,
-      qty_shipped: '',
-    }));
-    setForm(f => ({...f, po_id: poId, items}));
+    try {
+      const data = await apiGet(`/po-items?po_id=${poId}`);
+      const po = pos.find(p => p.id === poId);
+      setSelectedPO(po);
+      setPoItems(Array.isArray(data) ? data : []);
+      const items = (Array.isArray(data) ? data : []).map(pi => ({
+        po_item_id: pi.id,
+        product_name: pi.product_name,
+        sku: pi.sku || '',
+        size: pi.size || '',
+        color: pi.color || '',
+        serial_number: pi.serial_number || '',
+        ordered_qty: pi.qty,
+        qty_shipped: '',
+      }));
+      setForm(f => ({...f, po_id: poId, items}));
+    } catch (e) { setPoItems([]); }
   };
 
   const updateItemQty = (idx, val) => {
@@ -97,37 +101,34 @@ export default function BuyerShipmentModule({ token, userRole, hasPerm = () => f
       ...form,
       items: validItems.map(i => ({...i, qty_shipped: Number(i.qty_shipped), ordered_qty: Number(i.ordered_qty)}))
     };
-    const res = await fetch('/api/buyer-shipments', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify(payload)
-    });
-    const data = await res.json();
-    if (!res.ok) { toast.error(data.detail || data.error || 'Gagal membuat buyer shipment'); return; }
-    toast.success(`Shipment ${data.shipment_number || ''} berhasil dibuat`);
-    setShowModal(false);
-    fetchAll();
+    try {
+      const data = await apiPost('/buyer-shipments', payload);
+      toast.success(`Shipment ${data.shipment_number || ''} berhasil dibuat`);
+      setShowModal(false);
+      fetchAll();
+    } catch (err) { toast.error(err.message || 'Gagal membuat buyer shipment'); }
   };
 
   const openDetail = async (row) => {
-    const res = await fetch(`/api/buyer-shipments/${row.id}`, { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    setDetailData(data);
-    setShowDetail(true);
+    try {
+      const data = await apiGet(`/buyer-shipments/${row.id}`);
+      setDetailData(data);
+      setShowDetail(true);
+    } catch (e) { toast.error(e.message || 'Gagal memuat detail'); }
   };
 
   const handleDelete = async () => {
     if (!confirmDelete) return;
-    await fetch(`/api/buyer-shipments/${confirmDelete.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
-    setConfirmDelete(null);
-    fetchAll();
+    try {
+      await apiDelete(`/buyer-shipments/${confirmDelete.id}`);
+      setConfirmDelete(null);
+      fetchAll();
+    } catch (e) { toast.error(e.message || 'Gagal menghapus'); }
   };
 
   const downloadPDF = async (row) => {
     try {
-      const res = await fetch(`/api/export-pdf?type=buyer-shipment&id=${row.id}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await apiFetch(`/export-pdf?type=buyer-shipment&id=${row.id}`);
       if (res.ok) {
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
@@ -462,7 +463,7 @@ export default function BuyerShipmentModule({ token, userRole, hasPerm = () => f
                   {/* Cumulative PDF Export (total, not per dispatch) */}
                   <button onClick={async () => {
                     try {
-                      const res = await fetch(`/api/export-pdf?type=buyer-shipment&id=${detailData.id}`, { headers: { Authorization: `Bearer ${token}` } });
+                      const res = await apiFetch(`/export-pdf?type=buyer-shipment&id=${detailData.id}`);
                       if (!res.ok) throw new Error('Export gagal');
                       const blob = await res.blob();
                       const url = window.URL.createObjectURL(blob);
@@ -500,7 +501,7 @@ export default function BuyerShipmentModule({ token, userRole, hasPerm = () => f
                               <button onClick={async (e) => {
                                 e.stopPropagation();
                                 try {
-                                  const res = await fetch(`/api/export-pdf?type=buyer-shipment-dispatch&id=${detailData.id}&dispatch=${d.dispatch_seq}`, { headers: { Authorization: `Bearer ${token}` } });
+                                  const res = await apiFetch(`/export-pdf?type=buyer-shipment-dispatch&id=${detailData.id}&dispatch=${d.dispatch_seq}`);
                                   if (!res.ok) throw new Error('Export gagal');
                                   const blob = await res.blob();
                                   const url = window.URL.createObjectURL(blob);

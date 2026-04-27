@@ -5,6 +5,7 @@ import DataTable from './DataTable';
 import Modal from './Modal';
 import StatusBadge from './StatusBadge';
 import ConfirmDialog from './ConfirmDialog';
+import { apiGet, apiPost, apiPut, apiDelete } from '../../lib/api';
 
 export default function ProductionProgressModule({ token, userRole }) {
   const [workOrders, setWorkOrders] = useState([]);
@@ -22,29 +23,29 @@ export default function ProductionProgressModule({ token, userRole }) {
   useEffect(() => { fetchWorkOrders(); }, []);
 
   const fetchWorkOrders = async () => {
-    const res = await fetch('/api/work-orders', { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    setWorkOrders(Array.isArray(data) ? data : []);
+    try {
+      const data = await apiGet('/work-orders');
+      setWorkOrders(Array.isArray(data) ? data : []);
+    } catch (e) { setWorkOrders([]); }
   };
 
   const openProgressModal = async (wo) => {
     setSelectedWO(wo);
     setForm({ work_order_id: wo.id, completed_quantity: '', progress_date: new Date().toISOString().split('T')[0], notes: '' });
-    const res = await fetch(`/api/production-progress?work_order_id=${wo.id}`, { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    setProgressHistory(Array.isArray(data) ? data : []);
+    try {
+      const data = await apiGet(`/production-progress?work_order_id=${wo.id}`);
+      setProgressHistory(Array.isArray(data) ? data : []);
+    } catch (e) { setProgressHistory([]); }
     setShowModal(true);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    await fetch('/api/production-progress', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ ...form, completed_quantity: Number(form.completed_quantity) })
-    });
-    setShowModal(false);
-    fetchWorkOrders();
+    try {
+      await apiPost('/production-progress', { ...form, completed_quantity: Number(form.completed_quantity) });
+      setShowModal(false);
+      fetchWorkOrders();
+    } catch (e) { alert(e.message || 'Gagal menyimpan progress'); }
   };
 
   const openEditProgress = (p) => {
@@ -59,30 +60,24 @@ export default function ProductionProgressModule({ token, userRole }) {
 
   const handleEditSubmit = async (e) => {
     e.preventDefault();
-    await fetch(`/api/production-progress/${editProgress.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ ...editForm, completed_quantity: Number(editForm.completed_quantity) })
-    });
-    setShowEditModal(false);
-    // Refresh progress list
-    const res = await fetch(`/api/production-progress?work_order_id=${editProgress.work_order_id}`, { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    setProgressHistory(Array.isArray(data) ? data : []);
-    fetchWorkOrders();
+    try {
+      await apiPut(`/production-progress/${editProgress.id}`, { ...editForm, completed_quantity: Number(editForm.completed_quantity) });
+      setShowEditModal(false);
+      const data = await apiGet(`/production-progress?work_order_id=${editProgress.work_order_id}`);
+      setProgressHistory(Array.isArray(data) ? data : []);
+      fetchWorkOrders();
+    } catch (e) { alert(e.message || 'Gagal mengubah progress'); }
   };
 
   const handleDeleteProgress = async () => {
     if (!confirmDelete) return;
-    await fetch(`/api/production-progress/${confirmDelete.id}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` }
-    });
-    setConfirmDelete(null);
-    const res = await fetch(`/api/production-progress?work_order_id=${confirmDelete.work_order_id}`, { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    setProgressHistory(Array.isArray(data) ? data : []);
-    fetchWorkOrders();
+    try {
+      await apiDelete(`/production-progress/${confirmDelete.id}`);
+      setConfirmDelete(null);
+      const data = await apiGet(`/production-progress?work_order_id=${confirmDelete.work_order_id}`);
+      setProgressHistory(Array.isArray(data) ? data : []);
+      fetchWorkOrders();
+    } catch (e) { alert(e.message || 'Gagal menghapus progress'); }
   };
 
   const getProgressPct = (wo) => !wo.quantity ? 0 : Math.min(100, Math.round(((wo.completed_quantity||0)/wo.quantity)*100));

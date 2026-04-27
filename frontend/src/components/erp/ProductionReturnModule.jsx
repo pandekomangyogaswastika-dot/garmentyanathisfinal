@@ -7,6 +7,7 @@ import Modal from './Modal';
 import StatusBadge from './StatusBadge';
 import ConfirmDialog from './ConfirmDialog';
 import SearchableSelect from './SearchableSelect';
+import { apiGet, apiPost, apiPut, apiDelete, apiFetch } from '../../lib/api';
 
 const STATUS_OPTIONS = ['Repair Needed', 'In Repair', 'Completed', 'Shipped Back'];
 const DEFECT_TYPES = ['Jahitan Longgar', 'Warna Pudar', 'Ukuran Tidak Sesuai', 'Material Rusak', 'Kancing Copot', 'Resleting Rusak', 'Noda/Kotor', 'Lainnya'];
@@ -45,17 +46,18 @@ export default function ProductionReturnModule({ token, userRole }) {
   useEffect(() => { fetchReturns(); fetchPOs(); }, []);
 
   const fetchReturns = async () => {
-    let url = '/api/production-returns';
-    if (filterStatus) url += `?status=${filterStatus}`;
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    setReturns(Array.isArray(data) ? data : []);
+    try {
+      const url = filterStatus ? `/production-returns?status=${filterStatus}` : '/production-returns';
+      const data = await apiGet(url);
+      setReturns(Array.isArray(data) ? data : []);
+    } catch (e) { setReturns([]); }
   };
 
   const fetchPOs = async () => {
-    const res = await fetch('/api/production-pos', { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    setPOs(Array.isArray(data) ? data : []);
+    try {
+      const data = await apiGet('/production-pos');
+      setPOs(Array.isArray(data) ? data : []);
+    } catch (e) { setPOs([]); }
   };
 
   const openCreate = () => {
@@ -104,8 +106,7 @@ export default function ProductionReturnModule({ token, userRole }) {
     // Fetch PO items with production data
     setLoadingPoItems(true);
     try {
-      const res = await fetch(`/api/po-items-produced?po_id=${poId}`, { headers: { Authorization: `Bearer ${token}` } });
-      const data = await res.json();
+      const data = await apiGet(`/po-items-produced?po_id=${poId}`);
       setPoItems(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error('Failed to fetch PO items:', e);
@@ -147,23 +148,20 @@ export default function ProductionReturnModule({ token, userRole }) {
       ...form,
       items: form.items.map(it => ({ ...it, return_qty: Number(it.return_qty) || 0 }))
     };
-    const res = await fetch('/api/production-returns', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify(payload)
-    });
-    const data = await res.json();
-    if (!res.ok) { toast.error(data.detail || data.error || 'Gagal membuat retur'); return; }
-    toast.success(`Retur ${data.return_number || ''} berhasil dibuat`);
-    setShowModal(false);
-    fetchReturns();
+    try {
+      const data = await apiPost('/production-returns', payload);
+      toast.success(`Retur ${data.return_number || ''} berhasil dibuat`);
+      setShowModal(false);
+      fetchReturns();
+    } catch (err) { toast.error(err.message || 'Gagal membuat retur'); }
   };
 
   const openDetail = async (row) => {
-    const res = await fetch(`/api/production-returns/${row.id}`, { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    setDetailData(data);
-    setShowDetail(true);
+    try {
+      const data = await apiGet(`/production-returns/${row.id}`);
+      setDetailData(data);
+      setShowDetail(true);
+    } catch (e) { toast.error(e.message || 'Gagal memuat detail'); }
   };
 
   const openStatusUpdate = (row) => {
@@ -173,26 +171,23 @@ export default function ProductionReturnModule({ token, userRole }) {
 
   const handleStatusUpdate = async (e) => {
     e.preventDefault();
-    await fetch(`/api/production-returns/${statusTarget.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ status: statusTarget.status, notes: statusTarget.notes })
-    });
-    setShowStatusModal(false);
-    fetchReturns();
-    if (showDetail && detailData?.id === statusTarget.id) {
-      openDetail(statusTarget);
-    }
+    try {
+      await apiPut(`/production-returns/${statusTarget.id}`, { status: statusTarget.status, notes: statusTarget.notes });
+      setShowStatusModal(false);
+      fetchReturns();
+      if (showDetail && detailData?.id === statusTarget.id) {
+        openDetail(statusTarget);
+      }
+    } catch (e) { toast.error(e.message || 'Gagal update status'); }
   };
 
   const handleDelete = async () => {
     if (!confirmDelete) return;
-    await fetch(`/api/production-returns/${confirmDelete.id}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` }
-    });
-    setConfirmDelete(null);
-    fetchReturns();
+    try {
+      await apiDelete(`/production-returns/${confirmDelete.id}`);
+      setConfirmDelete(null);
+      fetchReturns();
+    } catch (e) { toast.error(e.message || 'Gagal menghapus retur'); }
   };
 
   const fmtDate = (d) => d ? new Date(d).toLocaleDateString('id-ID') : '-';
@@ -205,9 +200,7 @@ export default function ProductionReturnModule({ token, userRole }) {
 
   const downloadPDF = async (row) => {
     try {
-      const res = await fetch(`/api/export-pdf?type=production-return&id=${row.id}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await apiFetch(`/export-pdf?type=production-return&id=${row.id}`);
       if (res.ok) {
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);

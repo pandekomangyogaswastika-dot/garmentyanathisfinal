@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { ClipboardCheck, Clipboard, X, CheckCircle, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import Modal from './Modal';
+import { apiGet, apiPost, apiFetch } from '../../lib/api';
 
 export default function VendorMaterialInspection({ token, user }) {
   const [shipments, setShipments] = useState([]);
@@ -16,22 +17,23 @@ export default function VendorMaterialInspection({ token, user }) {
   useEffect(() => { fetchShipments(); fetchInspections(); }, []);
 
   const fetchShipments = async () => {
-    const res = await fetch('/api/vendor-shipments', { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    const received = Array.isArray(data) ? data.filter(s => s.status === 'Received') : [];
-    setShipments(received);
+    try {
+      const data = await apiGet('/vendor-shipments');
+      const received = Array.isArray(data) ? data.filter(s => s.status === 'Received') : [];
+      setShipments(received);
+    } catch (e) { setShipments([]); }
   };
 
   const fetchInspections = async () => {
-    const res = await fetch('/api/vendor-material-inspections', { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    setInspections(Array.isArray(data) ? data : []);
+    try {
+      const data = await apiGet('/vendor-material-inspections');
+      setInspections(Array.isArray(data) ? data : []);
+    } catch (e) { setInspections([]); }
   };
 
   const openInspect = async (shipment) => {
     setSelectedShipment(shipment);
-    const res = await fetch(`/api/vendor-shipments/${shipment.id}`, { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
+    const data = await apiGet(`/vendor-shipments/${shipment.id}`);
     const items = (data.items || []).map(si => ({
       shipment_item_id: si.id,
       sku: si.sku || '',
@@ -100,13 +102,13 @@ export default function VendorMaterialInspection({ token, user }) {
     e.preventDefault();
     setLoading(true);
     try {
-      const res = await fetch('/api/vendor-material-inspections', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ shipment_id: selectedShipment.id, ...form })
-      });
-      const data = await res.json();
-      if (!res.ok) { toast.error(data.detail || data.error || 'Gagal menyimpan inspeksi'); return; }
+      let inspectionData;
+      try {
+        inspectionData = await apiPost('/vendor-material-inspections', { shipment_id: selectedShipment.id, ...form });
+      } catch (err) {
+        toast.error(err.message || 'Gagal menyimpan inspeksi');
+        return;
+      }
       setShowModal(false);
       fetchShipments();
       fetchInspections();
@@ -129,21 +131,18 @@ export default function VendorMaterialInspection({ token, user }) {
             serial_number: i.serial_number || '',
             requested_qty: i.missing_qty, reason: `Missing dari inspeksi shipment ${selectedShipment.shipment_number}`
           }));
-          const reqRes = await fetch('/api/material-requests', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-            body: JSON.stringify({
+          try {
+            const reqData = await apiPost('/material-requests', {
               request_type: 'ADDITIONAL',
               original_shipment_id: selectedShipment.id,
-              inspection_id: data.id,
+              inspection_id: inspectionData.id,
               po_id: missingItems[0]?.po_id || '',
               reason: `Material missing setelah inspeksi shipment ${selectedShipment.shipment_number}`,
               items: missingItems
-            })
-          });
-          const reqData = await reqRes.json();
-          if (reqRes.ok) {
+            });
             toast.success(`Permintaan Tambahan ${reqData.request_number} berhasil diajukan ke ERP`);
+          } catch (err) {
+            toast.error(err.message || 'Gagal mengajukan permintaan tambahan');
           }
         }
       } else {
@@ -375,7 +374,7 @@ export default function VendorMaterialInspection({ token, user }) {
               <a href="#" onClick={async (e) => {
                 e.preventDefault();
                 try {
-                  const res = await fetch(`/api/export-pdf?type=vendor-inspection&id=${detailData.id}`, { headers: { Authorization: `Bearer ${token}` } });
+                  const res = await apiFetch(`/export-pdf?type=vendor-inspection&id=${detailData.id}`);
                   if (!res.ok) throw new Error('Export gagal');
                   const blob = await res.blob();
                   const url = window.URL.createObjectURL(blob);

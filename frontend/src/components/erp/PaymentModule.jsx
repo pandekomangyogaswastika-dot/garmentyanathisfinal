@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Plus, ArrowDownCircle, ArrowUpCircle, RefreshCw, CreditCard, DollarSign, Loader2 } from 'lucide-react';
 import Modal from './Modal';
 import PaginationFooter from './PaginationFooter';
+import { apiGet, apiPost } from '../../lib/api';
 
 const PAYMENT_METHODS = ['Transfer Bank', 'Cek/Giro', 'Cash', 'Kartu Kredit', 'Lainnya'];
 const FILTER_OPTIONS = [
@@ -71,8 +72,7 @@ export default function PaymentModule({ token, userRole, prefillInvoice }) {
       params.set('per_page', String(perPage));
       params.set('sort_by', 'payment_date');
       params.set('sort_dir', 'desc');
-      const res = await fetch(`/api/payments?${params.toString()}`, { headers: { Authorization: `Bearer ${token}` } });
-      const data = await res.json();
+      const data = await apiGet(`/payments?${params.toString()}`);
       if (data && Array.isArray(data.items)) {
         setPayments(data.items);
         setTotal(data.total || 0);
@@ -88,25 +88,22 @@ export default function PaymentModule({ token, userRole, prefillInvoice }) {
     } finally {
       setLoading(false);
     }
-  }, [token, activeTab, page, perPage, dateParams]);
+  }, [activeTab, page, perPage, dateParams]);
 
   // Aggregate KPIs across both tabs (within date range). Capped at per_page=200.
   const fetchStats = useCallback(async () => {
     try {
-      const headers = { Authorization: `Bearer ${token}` };
       const buildUrl = (type) => {
         const p = dateParams();
         p.set('payment_type', type);
         p.set('page', '1');
         p.set('per_page', '200');
-        return `/api/payments?${p.toString()}`;
+        return `/payments?${p.toString()}`;
       };
-      const [vRes, cRes] = await Promise.all([
-        fetch(buildUrl('VENDOR_PAYMENT'), { headers }),
-        fetch(buildUrl('CUSTOMER_PAYMENT'), { headers }),
+      const [vEnv, cEnv] = await Promise.all([
+        apiGet(buildUrl('VENDOR_PAYMENT')),
+        apiGet(buildUrl('CUSTOMER_PAYMENT')),
       ]);
-      const vEnv = await vRes.json();
-      const cEnv = await cRes.json();
       const vItems = Array.isArray(vEnv?.items) ? vEnv.items : (Array.isArray(vEnv) ? vEnv : []);
       const cItems = Array.isArray(cEnv?.items) ? cEnv.items : (Array.isArray(cEnv) ? cEnv : []);
       setStats({
@@ -116,17 +113,16 @@ export default function PaymentModule({ token, userRole, prefillInvoice }) {
         customerCount: typeof cEnv?.total === 'number' ? cEnv.total : cItems.length,
       });
     } catch (_) { /* non-critical */ }
-  }, [token, dateParams]);
+  }, [dateParams]);
 
   // Invoice list for the modal — only unpaid/partial, capped 200
   const fetchInvoices = useCallback(async () => {
     try {
-      const res = await fetch('/api/invoices?page=1&per_page=200', { headers: { Authorization: `Bearer ${token}` } });
-      const data = await res.json();
+      const data = await apiGet('/invoices?page=1&per_page=200');
       const items = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : []);
       setInvoices(items.filter(i => i.status !== 'Paid' && i.status !== 'Superseded'));
     } catch (_) { setInvoices([]); }
-  }, [token]);
+  }, []);
 
   useEffect(() => { fetchPayments(); }, [fetchPayments]);
   useEffect(() => { fetchStats(); }, [fetchStats]);
@@ -156,20 +152,19 @@ export default function PaymentModule({ token, userRole, prefillInvoice }) {
     if (amount <= 0) { setAmountError('Jumlah harus > 0'); return; }
     if (selectedInv && amount > outstanding) { setAmountError(`Melebihi sisa: ${fmt(outstanding)}`); return; }
     setSaving(true);
-    const res = await fetch('/api/payments', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ ...form, amount })
-    });
-    const data = await res.json();
-    setSaving(false);
-    if (!res.ok) { alert(data.detail || data.error || 'Gagal menyimpan'); return; }
-    setShowModal(false);
-    setForm({ invoice_id: '', payment_date: new Date().toISOString().split('T')[0], amount: '', payment_method: 'Transfer Bank', reference_number: '', notes: '', payment_type: 'VENDOR_PAYMENT' });
-    setAmountError('');
-    fetchPayments();
-    fetchStats();
-    fetchInvoices();
+    try {
+      await apiPost('/payments', { ...form, amount });
+      setShowModal(false);
+      setForm({ invoice_id: '', payment_date: new Date().toISOString().split('T')[0], amount: '', payment_method: 'Transfer Bank', reference_number: '', notes: '', payment_type: 'VENDOR_PAYMENT' });
+      setAmountError('');
+      fetchPayments();
+      fetchStats();
+      fetchInvoices();
+    } catch (err) {
+      alert(err.message || 'Gagal menyimpan');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const openCreate = (type) => {

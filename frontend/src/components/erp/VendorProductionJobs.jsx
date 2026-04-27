@@ -3,6 +3,7 @@ import { Plus, Search, AlertTriangle, Briefcase, X, Download, ChevronDown, Chevr
 import { toast } from 'sonner';
 import Modal from './Modal';
 import { MiniBar } from './VendorShared';
+import { apiGet, apiPost } from '../../lib/api';
 
 export default function VendorProductionJobs({ token, user }) {
   const [jobs, setJobs] = useState([]);
@@ -20,15 +21,18 @@ export default function VendorProductionJobs({ token, user }) {
   useEffect(() => { fetchAll(); }, []);
 
   const fetchAll = async () => {
-    const [jRes, sRes] = await Promise.all([
-      fetch('/api/production-jobs', { headers: { Authorization: `Bearer ${token}` } }),
-      fetch('/api/vendor-shipments', { headers: { Authorization: `Bearer ${token}` } }),
-    ]);
-    const [jData, sData] = await Promise.all([jRes.json(), sRes.json()]);
-    setJobs(Array.isArray(jData) ? jData : []);
-    const allShipments = Array.isArray(sData) ? sData : [];
-    const existingJobShipmentIds = new Set((Array.isArray(jData) ? jData : []).map(j => j.vendor_shipment_id));
-    setReceivedShipments(allShipments.filter(s => s.status === 'Received' && !existingJobShipmentIds.has(s.id) && s.inspection_status === 'Inspected' && !s.parent_shipment_id));
+    try {
+      const [jData, sData] = await Promise.all([
+        apiGet('/production-jobs'),
+        apiGet('/vendor-shipments'),
+      ]);
+      setJobs(Array.isArray(jData) ? jData : []);
+      const allShipments = Array.isArray(sData) ? sData : [];
+      const existingJobShipmentIds = new Set((Array.isArray(jData) ? jData : []).map(j => j.vendor_shipment_id));
+      setReceivedShipments(allShipments.filter(s => s.status === 'Received' && !existingJobShipmentIds.has(s.id) && s.inspection_status === 'Inspected' && !s.parent_shipment_id));
+    } catch (e) {
+      setJobs([]); setReceivedShipments([]);
+    }
   };
 
   const loadShipmentPreview = async (shipmentId) => {
@@ -36,9 +40,10 @@ export default function VendorProductionJobs({ token, user }) {
     setSelectedShipment(ship || null);
     setForm(f => ({ ...f, vendor_shipment_id: shipmentId }));
     if (shipmentId && !ship?.items?.length) {
-      const res = await fetch(`/api/vendor-shipment-items?shipment_id=${shipmentId}`, { headers: { Authorization: `Bearer ${token}` } });
-      const data = await res.json();
-      if (Array.isArray(data)) setSelectedShipment(prev => prev ? { ...prev, items: data } : ship);
+      try {
+        const data = await apiGet(`/vendor-shipment-items?shipment_id=${shipmentId}`);
+        if (Array.isArray(data)) setSelectedShipment(prev => prev ? { ...prev, items: data } : ship);
+      } catch (e) { /* ignore */ }
     }
   };
 
@@ -46,23 +51,25 @@ export default function VendorProductionJobs({ token, user }) {
     e.preventDefault();
     if (!form.vendor_shipment_id) { toast.error('Pilih shipment terlebih dahulu'); return; }
     setLoading(true);
-    const res = await fetch('/api/production-jobs', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ ...form, vendor_id: user.vendor_id })
-    });
-    const data = await res.json();
-    setLoading(false);
-    if (!res.ok) { toast.error(data.detail || data.error || 'Gagal membuat Production Job'); return; }
-    setShowModal(false);
-    fetchAll();
+    try {
+      await apiPost('/production-jobs', { ...form, vendor_id: user.vendor_id });
+      setShowModal(false);
+      fetchAll();
+    } catch (err) {
+      toast.error(err.message || 'Gagal membuat Production Job');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const openDetail = async (job) => {
-    const res = await fetch(`/api/production-jobs/${job.id}`, { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    setDetailJob(data);
-    setShowDetail(true);
+    try {
+      const data = await apiGet(`/production-jobs/${job.id}`);
+      setDetailJob(data);
+      setShowDetail(true);
+    } catch (e) {
+      toast.error(e.message || 'Gagal memuat detail job');
+    }
   };
 
   const toggleJob = (jobId) => setExpandedJobs(prev => ({ ...prev, [jobId]: !prev[jobId] }));

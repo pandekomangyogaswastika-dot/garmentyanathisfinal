@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Plus, Send, Download, Filter, Search, ChevronDown, ChevronRight, X, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import Modal from './Modal';
+import { apiGet, apiPost } from '../../lib/api';
 
 export default function VendorBuyerShipments({ token, user }) {
   const [shipments, setShipments] = useState([]);
@@ -19,13 +20,16 @@ export default function VendorBuyerShipments({ token, user }) {
   useEffect(() => { fetchAll(); }, []);
 
   const fetchAll = async () => {
-    const [sRes, jRes] = await Promise.all([
-      fetch('/api/buyer-shipments', { headers: { Authorization: `Bearer ${token}` } }),
-      fetch('/api/production-jobs', { headers: { Authorization: `Bearer ${token}` } }),
-    ]);
-    const [sData, jData] = await Promise.all([sRes.json(), jRes.json()]);
-    setShipments(Array.isArray(sData) ? sData : []);
-    setJobs(Array.isArray(jData) ? jData : []);
+    try {
+      const [sData, jData] = await Promise.all([
+        apiGet('/buyer-shipments'),
+        apiGet('/production-jobs'),
+      ]);
+      setShipments(Array.isArray(sData) ? sData : []);
+      setJobs(Array.isArray(jData) ? jData : []);
+    } catch (e) {
+      setShipments([]); setJobs([]);
+    }
   };
 
   const loadJobItems = async (jobId) => {
@@ -33,8 +37,7 @@ export default function VendorBuyerShipments({ token, user }) {
     setSelectedJob(job || null);
     setForm(f => ({ ...f, job_id: jobId, items: [] }));
     if (!jobId) { setJobItems([]); return; }
-    const res = await fetch(`/api/production-job-items?job_id=${jobId}`, { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
+    const data = await apiGet(`/production-job-items?job_id=${jobId}`);
     const items = Array.isArray(data) ? data : [];
     setJobItems(items);
     setForm(f => ({
@@ -82,10 +85,8 @@ export default function VendorBuyerShipments({ token, user }) {
     const shipmentNumber = existingShipment ? existingShipment.shipment_number : `SJ-${form.job_id.slice(-6).toUpperCase()}-${Date.now().toString().slice(-4)}`;
 
     setLoading(true);
-    const res = await fetch('/api/buyer-shipments', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({
+    try {
+      await apiPost('/buyer-shipments', {
         shipment_number: shipmentNumber,
         job_id: form.job_id,
         po_id: form.po_id || selectedJob?.po_id,
@@ -93,22 +94,26 @@ export default function VendorBuyerShipments({ token, user }) {
         notes: form.notes,
         vendor_id: user.vendor_id,
         items: validItems.map(i => ({ ...i, qty_shipped: Number(i.qty_shipped) }))
-      })
-    });
-    const data = await res.json();
-    setLoading(false);
-    if (!res.ok) { toast.error(data.detail || data.error || 'Gagal membuat pengiriman'); return; }
-    setShowModal(false);
-    fetchAll();
+      });
+      setShowModal(false);
+      fetchAll();
+    } catch (err) {
+      toast.error(err.message || 'Gagal membuat pengiriman');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const loadDispatches = async (shipmentId) => {
     if (expandedShipment === shipmentId) { setExpandedShipment(null); return; }
     setExpandedShipment(shipmentId);
     if (!dispatches[shipmentId]) {
-      const res = await fetch(`/api/buyer-shipment-dispatches?shipment_id=${shipmentId}`, { headers: { Authorization: `Bearer ${token}` } });
-      const data = await res.json();
-      setDispatches(prev => ({ ...prev, [shipmentId]: Array.isArray(data) ? data : [] }));
+      try {
+        const data = await apiGet(`/buyer-shipment-dispatches?shipment_id=${shipmentId}`);
+        setDispatches(prev => ({ ...prev, [shipmentId]: Array.isArray(data) ? data : [] }));
+      } catch (e) {
+        setDispatches(prev => ({ ...prev, [shipmentId]: [] }));
+      }
     }
   };
 

@@ -1,6 +1,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Download, FileText, BarChart2, TrendingUp, CreditCard, Factory, Truck, RotateCcw, AlertTriangle, RefreshCw, Search, Filter, Calendar, ChevronDown, ChevronRight, Package } from 'lucide-react';
+import { apiGet, apiFetch } from '../../lib/api';
 
 const REPORT_TYPES = [
   { id: 'production', label: 'Laporan Produksi', icon: Factory, description: 'Data PO & produksi lengkap', color: 'blue' },
@@ -40,16 +41,14 @@ export default function ReportsModule({ token }) {
 
   const fetchVendors = async () => {
     try {
-      const res = await fetch('/api/garments', { headers: { Authorization: `Bearer ${token}` } });
-      const d = await res.json();
+      const d = await apiGet('/garments');
       setVendors(Array.isArray(d) ? d : []);
     } catch (e) { setVendors([]); }
   };
 
   const fetchPOs = async () => {
     try {
-      const res = await fetch('/api/production-pos', { headers: { Authorization: `Bearer ${token}` } });
-      const d = await res.json();
+      const d = await apiGet('/production-pos');
       setPos(Array.isArray(d) ? d : []);
     } catch (e) { setPos([]); }
   };
@@ -59,14 +58,11 @@ export default function ReportsModule({ token }) {
     try {
       const params = new URLSearchParams();
       Object.entries(filters).forEach(([k, v]) => { if (v) params.append(k, v); });
-      const res = await fetch(`/api/reports/${activeReport}?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const result = await res.json();
+      const result = await apiGet(`/reports/${activeReport}?${params.toString()}`);
       setData(Array.isArray(result) ? result : []);
     } catch (e) { setData([]); }
     setLoading(false);
-  }, [activeReport, filters, token]);
+  }, [activeReport, filters]);
 
   const handleFilter = () => {
     fetchReport();
@@ -82,9 +78,7 @@ export default function ReportsModule({ token }) {
     try {
       const params = new URLSearchParams({ type: `report-${activeReport}` });
       Object.entries(filters).forEach(([k, v]) => { if (v) params.append(k, v); });
-      const res = await fetch(`/api/export-excel?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await apiFetch(`/export-excel?${params.toString()}`);
       if (res.ok) {
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
@@ -126,9 +120,7 @@ export default function ReportsModule({ token }) {
     try {
       const params = new URLSearchParams({ type: `report-${activeReport}` });
       Object.entries(filters).forEach(([k, v]) => { if (v) params.append(k, v); });
-      const res = await fetch(`/api/export-pdf?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await apiFetch(`/export-pdf?${params.toString()}`);
       if (res.ok) {
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);

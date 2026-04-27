@@ -5,6 +5,7 @@ import Modal from './Modal';
 import StatusBadge from './StatusBadge';
 import ConfirmDialog from './ConfirmDialog';
 import ImportExportPanel from './ImportExportPanel';
+import { apiGet, apiPost, apiPut, apiDelete } from '../../lib/api';
 
 export default function ProductsModule({ token, userRole, hasPerm = () => false }) {
   const [showModal, setShowModal] = useState(false);
@@ -34,17 +35,14 @@ export default function ProductsModule({ token, userRole, hasPerm = () => false 
     if (sort_by) params.set('sort_by', sort_by);
     if (sort_dir) params.set('sort_dir', sort_dir);
     if (search) params.set('search', search);
-    const res = await fetch(`/api/products?${params.toString()}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error('Gagal memuat produk');
-    return res.json();
+    return apiGet(`/products?${params.toString()}`);
   };
 
   const fetchVariants = async (productId) => {
-    const res = await fetch(`/api/product-variants?product_id=${productId}`, { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    setVariants(Array.isArray(data) ? data : []);
+    try {
+      const data = await apiGet(`/product-variants?product_id=${productId}`);
+      setVariants(Array.isArray(data) ? data : []);
+    } catch (e) { setVariants([]); }
   };
 
   const toggleExpand = async (productId) => {
@@ -68,18 +66,24 @@ export default function ProductsModule({ token, userRole, hasPerm = () => false 
   const handleSubmit = async (e) => {
     e.preventDefault();
     const payload = { ...form, cmt_price: Number(form.cmt_price) || 0, selling_price: Number(form.selling_price) || 0 };
-    const url = editData ? `/api/products/${editData.id}` : '/api/products';
-    const method = editData ? 'PUT' : 'POST';
-    await fetch(url, { method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(payload) });
-    setShowModal(false);
-    refetchProducts();
+    try {
+      if (editData) {
+        await apiPut(`/products/${editData.id}`, payload);
+      } else {
+        await apiPost('/products', payload);
+      }
+      setShowModal(false);
+      refetchProducts();
+    } catch (e) { alert(e.message || 'Gagal menyimpan produk'); }
   };
 
   const handleDelete = async () => {
     if (!confirmDelete) return;
-    await fetch(`/api/products/${confirmDelete.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
-    setConfirmDelete(null);
-    refetchProducts();
+    try {
+      await apiDelete(`/products/${confirmDelete.id}`);
+      setConfirmDelete(null);
+      refetchProducts();
+    } catch (e) { alert(e.message || 'Gagal menghapus produk'); }
   };
 
   const handlePhotoUpload = async (productId, file) => {
@@ -88,13 +92,8 @@ export default function ProductsModule({ token, userRole, hasPerm = () => false 
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const res = await fetch(`/api/products/${productId}/photo`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData
-      });
-      if (res.ok) { refetchProducts(); }
-      else { const d = await res.json(); alert(d.detail || 'Upload gagal'); }
+      await apiPost(`/products/${productId}/photo`, formData);
+      refetchProducts();
     } catch (e) { alert('Upload error: ' + e.message); }
     finally { setUploading(false); }
   };
@@ -107,20 +106,20 @@ export default function ProductsModule({ token, userRole, hasPerm = () => false 
 
   const handleAddVariant = async (e) => {
     e.preventDefault();
-    await fetch('/api/product-variants', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ ...variantForm, product_id: selectedProduct.id })
-    });
-    setShowVariantModal(false);
-    await fetchVariants(selectedProduct.id);
+    try {
+      await apiPost('/product-variants', { ...variantForm, product_id: selectedProduct.id });
+      setShowVariantModal(false);
+      await fetchVariants(selectedProduct.id);
+    } catch (e) { alert(e.message || 'Gagal menambah varian'); }
   };
 
   const handleDeleteVariant = async () => {
     if (!confirmDeleteVariant) return;
-    await fetch(`/api/product-variants/${confirmDeleteVariant.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
-    setConfirmDeleteVariant(null);
-    if (expandedProduct) await fetchVariants(expandedProduct);
+    try {
+      await apiDelete(`/product-variants/${confirmDeleteVariant.id}`);
+      setConfirmDeleteVariant(null);
+      if (expandedProduct) await fetchVariants(expandedProduct);
+    } catch (e) { alert(e.message || 'Gagal menghapus varian'); }
   };
 
   const fmt = (v) => v ? 'Rp ' + Number(v).toLocaleString('id-ID') : '-';

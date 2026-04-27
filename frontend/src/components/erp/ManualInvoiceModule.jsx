@@ -4,6 +4,7 @@ import { Plus, FileText, RefreshCw, Eye, Edit3, ChevronRight, AlertCircle, Alert
 import Modal from './Modal';
 import SearchableSelect from './SearchableSelect';
 import ImportExportPanel from './ImportExportPanel';
+import { apiGet, apiPost, apiDelete } from '../../lib/api';
 
 const CATEGORY_COLORS = {
   VENDOR: 'bg-amber-100 text-amber-700 border border-amber-200',
@@ -73,43 +74,42 @@ export default function ManualInvoiceModule({ token, userRole }) {
   const fetchAll = async () => {
     setLoading(true);
     try {
-      let url = '/api/invoices?';
       const params = [];
       if (filterCat) params.push(`category=${filterCat}`);
       if (filterType) params.push(`invoice_type=${filterType}`);
       if (filterStatus) params.push(`status=${filterStatus}`);
-      const res = await fetch(url + params.join('&'), { headers: { Authorization: `Bearer ${token}` } });
-      const data = await res.json();
+      const data = await apiGet(`/invoices?${params.join('&')}`);
       setInvoices(Array.isArray(data) ? data : []);
     } catch (e) { setInvoices([]); } finally { setLoading(false); }
   };
 
   const fetchPOs = async () => {
-    const res = await fetch('/api/production-pos', { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    setPos(Array.isArray(data) ? data.filter(p => p.status !== 'Closed') : []);
+    try {
+      const data = await apiGet('/production-pos');
+      setPos(Array.isArray(data) ? data.filter(p => p.status !== 'Closed') : []);
+    } catch (e) { setPos([]); }
   };
 
   const loadPOItems = async (poId) => {
     if (!poId) { setPoItems([]); setInvoiceItems([]); setVariances([]); return; }
     setCreateForm(f => ({ ...f, source_po_id: poId }));
-    const res = await fetch(`/api/po-items?po_id=${poId}`, { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    const items = Array.isArray(data) ? data : [];
-    setPoItems(items);
-    setInvoiceItems(items.map(it => ({
-      sku: it.sku, product_name: it.product_name, size: it.size, color: it.color,
-      ordered_qty: it.qty, invoice_qty: it.qty,
-      selling_price: it.selling_price_snapshot || 0,
-      cmt_price: it.cmt_price_snapshot || 0,
-      po_item_id: it.id,
-    })));
-    
-    // Fetch variances for this PO (Acknowledged or Resolved status)
-    const varRes = await fetch(`/api/production-variances?po_id=${poId}`, { headers: { Authorization: `Bearer ${token}` } });
-    const varData = await varRes.json();
-    const approvedVars = Array.isArray(varData) ? varData.filter(v => ['Acknowledged', 'Resolved'].includes(v.status)) : [];
-    setVariances(approvedVars);
+    try {
+      const data = await apiGet(`/po-items?po_id=${poId}`);
+      const items = Array.isArray(data) ? data : [];
+      setPoItems(items);
+      setInvoiceItems(items.map(it => ({
+        sku: it.sku, product_name: it.product_name, size: it.size, color: it.color,
+        ordered_qty: it.qty, invoice_qty: it.qty,
+        selling_price: it.selling_price_snapshot || 0,
+        cmt_price: it.cmt_price_snapshot || 0,
+        po_item_id: it.id,
+      })));
+
+      // Fetch variances for this PO (Acknowledged or Resolved status)
+      const varData = await apiGet(`/production-variances?po_id=${poId}`);
+      const approvedVars = Array.isArray(varData) ? varData.filter(v => ['Acknowledged', 'Resolved'].includes(v.status)) : [];
+      setVariances(approvedVars);
+    } catch (e) { setPoItems([]); setInvoiceItems([]); setVariances([]); }
   };
 
   const openCreate = async () => {
@@ -182,33 +182,21 @@ export default function ManualInvoiceModule({ token, userRole }) {
     if (!confirm(`Submit request edit untuk invoice ${selectedInv.invoice_number}?\n\nInvoice tidak akan berubah sampai request di-approve oleh Superadmin/Admin.`)) return;
     setRequestEditSaving(true);
     try {
-      const res = await fetch('/api/invoice-edit-requests', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          invoice_id: selectedInv.id,
-          change_summary: requestEditForm.change_summary,
-          changes_requested: {
-            invoice_items: requestEditForm.invoice_items,
-            discount: Number(requestEditForm.discount),
-            notes: requestEditForm.notes,
-            total_amount: requestEditTotalAfterDiscount
-          }
-        })
+      await apiPost('/invoice-edit-requests', {
+        invoice_id: selectedInv.id,
+        change_summary: requestEditForm.change_summary,
+        changes_requested: {
+          invoice_items: requestEditForm.invoice_items,
+          discount: Number(requestEditForm.discount),
+          notes: requestEditForm.notes,
+          total_amount: requestEditTotalAfterDiscount
+        }
       });
-      const data = await res.json();
-      if (!res.ok) {
-        alert(data.error || 'Gagal submit request edit');
-      } else {
-        alert('Request edit berhasil disubmit! Tunggu approval dari Superadmin/Admin.');
-        setShowRequestEdit(false);
-        fetchAll();
-      }
+      alert('Request edit berhasil disubmit! Tunggu approval dari Superadmin/Admin.');
+      setShowRequestEdit(false);
+      fetchAll();
     } catch (e) {
-      alert('Error: ' + e.message);
+      alert('Error: ' + (e.message || 'Gagal submit request edit'));
     } finally {
       setRequestEditSaving(false);
     }
@@ -220,10 +208,7 @@ export default function ManualInvoiceModule({ token, userRole }) {
     setShowHistory(true);
     setHistoryLoading(true);
     try {
-      const res = await fetch(`/api/invoices/${inv.id}/change-history`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const data = await res.json();
+      const data = await apiGet(`/invoices/${inv.id}/change-history`);
       setChangeHistory(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error('Error fetching history:', e);
@@ -238,40 +223,37 @@ export default function ManualInvoiceModule({ token, userRole }) {
     if (!createForm.source_po_id) { alert('Pilih Production PO terlebih dahulu'); return; }
     if (invoiceItems.length === 0) { alert('Tidak ada item PO'); return; }
     setSaving(true);
-    const res = await fetch('/api/invoices', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ ...createForm, invoice_items: invoiceItems, total_amount: totalAfterDiscount })
-    });
-    const data = await res.json();
-    setSaving(false);
-    if (!res.ok) { alert(data.error || 'Gagal membuat invoice'); return; }
-    setShowCreate(false);
-    fetchAll();
+    try {
+      await apiPost('/invoices', { ...createForm, invoice_items: invoiceItems, total_amount: totalAfterDiscount });
+      setShowCreate(false);
+      fetchAll();
+    } catch (e) {
+      alert(e.message || 'Gagal membuat invoice');
+    } finally { setSaving(false); }
   };
 
   const openDetail = async (inv) => {
-    const res = await fetch(`/api/invoices/${inv.id}`, { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    setSelectedInv(data);
-    
-    // Fetch variances for this PO (if has PO)
-    if (data.source_po_id || data.po_id) {
-      const poId = data.source_po_id || data.po_id;
-      try {
-        const varRes = await fetch(`/api/production-variances?po_id=${poId}`, { headers: { Authorization: `Bearer ${token}` } });
-        const varData = await varRes.json();
-        const approvedVars = Array.isArray(varData) ? varData.filter(v => ['Acknowledged', 'Resolved'].includes(v.status)) : [];
-        setVariances(approvedVars);
-      } catch (e) {
-        console.error('Error fetching variances:', e);
+    try {
+      const data = await apiGet(`/invoices/${inv.id}`);
+      setSelectedInv(data);
+
+      // Fetch variances for this PO (if has PO)
+      if (data.source_po_id || data.po_id) {
+        const poId = data.source_po_id || data.po_id;
+        try {
+          const varData = await apiGet(`/production-variances?po_id=${poId}`);
+          const approvedVars = Array.isArray(varData) ? varData.filter(v => ['Acknowledged', 'Resolved'].includes(v.status)) : [];
+          setVariances(approvedVars);
+        } catch (e) {
+          console.error('Error fetching variances:', e);
+          setVariances([]);
+        }
+      } else {
         setVariances([]);
       }
-    } else {
-      setVariances([]);
-    }
-    
-    setShowDetail(true);
+
+      setShowDetail(true);
+    } catch (e) { alert(e.message || 'Gagal memuat detail invoice'); }
   };
 
   const openRevise = (inv) => {
@@ -296,16 +278,13 @@ export default function ManualInvoiceModule({ token, userRole }) {
   const handleRevise = async (e) => {
     e.preventDefault();
     setSaving(true);
-    const res = await fetch(`/api/invoices/${selectedInv.id}/revise`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ ...reviseForm, total_amount: reviseTotalBeforeDiscount })
-    });
-    const data = await res.json();
-    setSaving(false);
-    if (!res.ok) { alert(data.error || 'Gagal merevisi invoice'); return; }
-    setShowRevise(false);
-    fetchAll();
+    try {
+      await apiPost(`/invoices/${selectedInv.id}/revise`, { ...reviseForm, total_amount: reviseTotalBeforeDiscount });
+      setShowRevise(false);
+      fetchAll();
+    } catch (e) {
+      alert(e.message || 'Gagal merevisi invoice');
+    } finally { setSaving(false); }
   };
 
   const handleAddAdjustment = async (e) => {
@@ -314,20 +293,12 @@ export default function ManualInvoiceModule({ token, userRole }) {
     if (!adjForm.reason) { alert('Alasan wajib diisi'); return; }
     setAdjSaving(true);
     try {
-      const res = await fetch('/api/invoice-adjustments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ invoice_id: selectedInv.id, ...adjForm, amount: Number(adjForm.amount) })
-      });
-      const data = await res.json();
-      if (!res.ok) { alert(data.error || 'Gagal menambahkan adjustment'); }
-      else {
-        setShowAdjustment(false);
-        setAdjForm({ adjustment_type: 'ADD', amount: '', reason: '', notes: '', reference_event: '' });
-        // Refresh detail
-        openDetail(selectedInv);
-        fetchAll();
-      }
+      await apiPost('/invoice-adjustments', { invoice_id: selectedInv.id, ...adjForm, amount: Number(adjForm.amount) });
+      setShowAdjustment(false);
+      setAdjForm({ adjustment_type: 'ADD', amount: '', reason: '', notes: '', reference_event: '' });
+      // Refresh detail
+      openDetail(selectedInv);
+      fetchAll();
     } catch (err) { alert('Error: ' + err.message); }
     setAdjSaving(false);
   };
@@ -335,14 +306,9 @@ export default function ManualInvoiceModule({ token, userRole }) {
   const handleDeleteAdjustment = async (adjId) => {
     if (!confirm('Hapus adjustment ini?')) return;
     try {
-      const res = await fetch(`/api/invoice-adjustments/${adjId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.ok) {
-        openDetail(selectedInv);
-        fetchAll();
-      }
+      await apiDelete(`/invoice-adjustments/${adjId}`);
+      openDetail(selectedInv);
+      fetchAll();
     } catch (err) { alert('Error: ' + err.message); }
   };
 

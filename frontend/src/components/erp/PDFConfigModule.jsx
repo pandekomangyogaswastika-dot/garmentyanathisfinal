@@ -13,6 +13,7 @@ import {
   useSortable, verticalListSortingStrategy
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { apiGet, apiPost, apiPut, apiDelete, apiFetch } from '../../lib/api';
 
 const PDF_TYPE_LABELS = {
   'production-po': 'SPP (Surat Perintah Produksi)',
@@ -113,7 +114,6 @@ export default function PDFConfigModule({ token, userRole }) {
   const [testResult, setTestResult] = useState(null);
 
   const canEdit = ['superadmin', 'admin'].includes((userRole || '').toLowerCase());
-  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -122,26 +122,22 @@ export default function PDFConfigModule({ token, userRole }) {
 
   const fetchConfigs = useCallback(async () => {
     try {
-      const res = await fetch('/api/pdf-export-configs', { headers });
-      const data = await res.json();
+      const data = await apiGet('/pdf-export-configs');
       setConfigs(Array.isArray(data) ? data : []);
     } catch (e) { console.error('Failed to fetch PDF configs:', e); }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, []);
 
   const fetchColumns = useCallback(async (type) => {
     if (!type) { setColumns([]); return []; }
     try {
-      const res = await fetch(`/api/pdf-export-columns?type=${type}`, { headers });
-      const data = await res.json();
+      const data = await apiGet(`/pdf-export-columns?type=${type}`);
       const cols = data.columns || [];
       setColumns(cols);
       return cols;
     } catch (e) {
       setColumns([]); return [];
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, []);
 
   useEffect(() => { fetchConfigs(); }, [fetchConfigs]);
 
@@ -236,18 +232,15 @@ export default function PDFConfigModule({ token, userRole }) {
         custom_header_line2: formCustomHeader2.trim(),
         custom_footer_text: formCustomFooter.trim(),
       };
-      const res = editConfig
-        ? await fetch(`/api/pdf-export-configs/${editConfig.id}`, { method: 'PUT', headers, body: JSON.stringify(body) })
-        : await fetch('/api/pdf-export-configs', { method: 'POST', headers, body: JSON.stringify(body) });
-      if (res.ok) {
-        setShowModal(false);
-        fetchConfigs();
+      if (editConfig) {
+        await apiPut(`/pdf-export-configs/${editConfig.id}`, body);
       } else {
-        const err = await res.json().catch(() => ({}));
-        alert('Error: ' + (err.detail || JSON.stringify(err)));
+        await apiPost('/pdf-export-configs', body);
       }
+      setShowModal(false);
+      fetchConfigs();
     } catch (e) {
-      alert('Error: ' + e.message);
+      alert('Error: ' + (e.message || 'Gagal menyimpan'));
     }
     setSaving(false);
   };
@@ -255,36 +248,25 @@ export default function PDFConfigModule({ token, userRole }) {
   const handleDelete = async (id) => {
     if (!window.confirm('Hapus preset PDF ini?')) return;
     try {
-      const res = await fetch(`/api/pdf-export-configs/${id}`, { method: 'DELETE', headers });
-      if (res.ok) fetchConfigs();
-      else {
-        const err = await res.json().catch(() => ({}));
-        alert('Error: ' + (err.detail || 'Gagal menghapus'));
-      }
-    } catch (e) { alert('Error: ' + e.message); }
+      await apiDelete(`/pdf-export-configs/${id}`);
+      fetchConfigs();
+    } catch (e) { alert('Error: ' + (e.message || 'Gagal menghapus')); }
   };
 
   const handleSetDefault = async (cfg) => {
     try {
-      const res = await fetch(`/api/pdf-export-configs/${cfg.id}`, {
-        method: 'PUT', headers,
-        body: JSON.stringify({ is_default: !cfg.is_default })
-      });
-      if (res.ok) fetchConfigs();
-      else {
-        const err = await res.json().catch(() => ({}));
-        alert('Error: ' + (err.detail || 'Gagal menyimpan'));
-      }
-    } catch (e) { alert('Error: ' + e.message); }
+      await apiPut(`/pdf-export-configs/${cfg.id}`, { is_default: !cfg.is_default });
+      fetchConfigs();
+    } catch (e) { alert('Error: ' + (e.message || 'Gagal menyimpan')); }
   };
 
   const handleTestExport = async (type) => {
     setTestResult(null);
     try {
       const defaultConfig = configs.find(c => c.pdf_type === type && c.is_default);
-      let url = `/api/export-pdf?type=${type}`;
+      let url = `/export-pdf?type=${type}`;
       if (defaultConfig) url += `&config_id=${defaultConfig.id}`;
-      const res = await fetch(url, { headers });
+      const res = await apiFetch(url);
       if (res.ok) {
         const blob = await res.blob();
         const burl = URL.createObjectURL(blob);

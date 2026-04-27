@@ -10,6 +10,7 @@ import FileAttachmentPanel from './FileAttachmentPanel';
 import SearchableSelect from './SearchableSelect';
 import ImportExportPanel from './ImportExportPanel';
 import { useSortableTable, SortableHeader } from './useSortableTable';
+import { apiGet, apiPost, apiPut, apiDelete, apiFetch } from '../../lib/api';
 
 const TABS = [
   { id: 'shipments', label: 'Daftar Shipment', icon: Truck },
@@ -80,37 +81,39 @@ function ShipmentList({ token, userRole, hasPerm = () => false }) {
   useEffect(() => { fetchAll(); }, []);
 
   const fetchAll = async () => {
-    const [sRes, vRes, pRes] = await Promise.all([
-      fetch('/api/vendor-shipments', { headers: { Authorization: `Bearer ${token}` } }),
-      fetch('/api/garments', { headers: { Authorization: `Bearer ${token}` } }),
-      fetch('/api/production-pos', { headers: { Authorization: `Bearer ${token}` } })
-    ]);
-    const [sData, vData, pData] = await Promise.all([sRes.json(), vRes.json(), pRes.json()]);
-    setShipments(Array.isArray(sData) ? sData : []);
-    setVendors(Array.isArray(vData) ? vData.filter(v => v.status === 'active') : []);
-    // Phase 8.5: keep only POs that are still shippable to the vendor
-    //  - not Completed/Closed
-    //  - remaining_qty_to_vendor > 0 (uses backend-enriched field)
-    setPOs(Array.isArray(pData) ? pData.filter(p =>
-      !['Completed', 'Closed'].includes(p.status) &&
-      (typeof p.remaining_qty_to_vendor === 'number' ? p.remaining_qty_to_vendor > 0 : true)
-    ) : []);
+    try {
+      const [sData, vData, pData] = await Promise.all([
+        apiGet('/vendor-shipments'),
+        apiGet('/garments'),
+        apiGet('/production-pos'),
+      ]);
+      setShipments(Array.isArray(sData) ? sData : []);
+      setVendors(Array.isArray(vData) ? vData.filter(v => v.status === 'active') : []);
+      // Phase 8.5: keep only POs that are still shippable to the vendor
+      setPOs(Array.isArray(pData) ? pData.filter(p =>
+        !['Completed', 'Closed'].includes(p.status) &&
+        (typeof p.remaining_qty_to_vendor === 'number' ? p.remaining_qty_to_vendor > 0 : true)
+      ) : []);
+    } catch (e) {
+      setShipments([]); setVendors([]); setPOs([]);
+    }
   };
 
   const loadPOItems = async (poId) => {
     if (!poId) { setPoItems([]); setSelectedPO(null); setPoAccessories([]); return; }
-    const [itemsRes, accRes] = await Promise.all([
-      fetch(`/api/po-items?po_id=${poId}`, { headers: { Authorization: `Bearer ${token}` } }),
-      fetch(`/api/po-accessories?po_id=${poId}`, { headers: { Authorization: `Bearer ${token}` } })
-    ]);
-    const [itemsData, accData] = await Promise.all([itemsRes.json(), accRes.json()]);
-    // Phase 8.5: hide fully-shipped po_items from the picker (remaining_qty_to_vendor === 0)
-    const filteredItems = Array.isArray(itemsData)
-      ? itemsData.filter(i => typeof i.remaining_qty_to_vendor === 'number' ? i.remaining_qty_to_vendor > 0 : true)
-      : [];
-    setPoItems(filteredItems);
-    setPoAccessories(Array.isArray(accData) ? accData : []);
-    setSelectedPO(pos.find(p => p.id === poId) || null);
+    try {
+      const [itemsData, accData] = await Promise.all([
+        apiGet(`/po-items?po_id=${poId}`),
+        apiGet(`/po-accessories?po_id=${poId}`),
+      ]);
+      // Phase 8.5: hide fully-shipped po_items from the picker (remaining_qty_to_vendor === 0)
+      const filteredItems = Array.isArray(itemsData)
+        ? itemsData.filter(i => typeof i.remaining_qty_to_vendor === 'number' ? i.remaining_qty_to_vendor > 0 : true)
+        : [];
+      setPoItems(filteredItems);
+      setPoAccessories(Array.isArray(accData) ? accData : []);
+      setSelectedPO(pos.find(p => p.id === poId) || null);
+    } catch (e) { setPoItems([]); setPoAccessories([]); }
   };
 
   const addShipmentItem = (poItem) => {
@@ -151,83 +154,82 @@ function ShipmentList({ token, userRole, hasPerm = () => false }) {
         return;
       }
     }
-    const res = await fetch('/api/vendor-shipments', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ ...form, shipment_type: 'NORMAL' })
-    });
-    const data = await res.json();
-    if (!res.ok) { toast.error(data.detail || data.error || 'Gagal membuat shipment'); return; }
-    toast.success(`Shipment ${data.shipment_number || ''} berhasil dibuat`);
-    setShowModal(false);
-    fetchAll();
+    try {
+      const data = await apiPost('/vendor-shipments', { ...form, shipment_type: 'NORMAL' });
+      toast.success(`Shipment ${data.shipment_number || ''} berhasil dibuat`);
+      setShowModal(false);
+      fetchAll();
+    } catch (err) { toast.error(err.message || 'Gagal membuat shipment'); }
   };
 
   const openDetail = async (row) => {
-    const res = await fetch(`/api/vendor-shipments/${row.id}`, { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    setDetailData(data);
+    try {
+      const data = await apiGet(`/vendor-shipments/${row.id}`);
+      setDetailData(data);
 
-    // Build material timeline
-    const timeline = [];
-    timeline.push({ icon: '📦', text: `Shipment ${data.shipment_number} dibuat`, date: data.created_at, type: 'shipment' });
-    if (data.status === 'Received') timeline.push({ icon: '✅', text: 'Material diterima vendor', date: data.updated_at, type: 'received' });
-    if (data.inspection_status === 'Inspected') {
-      timeline.push({ icon: '🔍', text: `Inspeksi selesai — Diterima: ${data.total_received || 0} pcs, Missing: ${data.total_missing || 0} pcs`, date: data.inspected_at, type: 'inspection' });
-    }
-    // Find material requests
-    const reqRes = await fetch(`/api/material-requests?status=`, { headers: { Authorization: `Bearer ${token}` } });
-    const allReqs = await reqRes.json();
-    const relReqs = Array.isArray(allReqs) ? allReqs.filter(r => r.original_shipment_id === row.id) : [];
-    for (const req of relReqs) {
-      timeline.push({
-        icon: req.request_type === 'ADDITIONAL' ? '➕' : '🔄',
-        text: `${req.request_type === 'ADDITIONAL' ? 'Permintaan Tambahan' : 'Permintaan Pengganti'} ${req.request_number} — Status: ${req.status}`,
-        date: req.created_at, type: 'request'
-      });
-      if (req.child_shipment_id) {
-        timeline.push({ icon: '🚚', text: `Child Shipment ${req.child_shipment_number} dikirim`, date: req.approved_at, type: 'child_shipment' });
+      // Build material timeline
+      const timeline = [];
+      timeline.push({ icon: '📦', text: `Shipment ${data.shipment_number} dibuat`, date: data.created_at, type: 'shipment' });
+      if (data.status === 'Received') timeline.push({ icon: '✅', text: 'Material diterima vendor', date: data.updated_at, type: 'received' });
+      if (data.inspection_status === 'Inspected') {
+        timeline.push({ icon: '🔍', text: `Inspeksi selesai — Diterima: ${data.total_received || 0} pcs, Missing: ${data.total_missing || 0} pcs`, date: data.inspected_at, type: 'inspection' });
       }
-    }
-    timeline.sort((a, b) => new Date(a.date) - new Date(b.date));
-    setDetailTimeline(timeline);
+      // Find material requests
+      const allReqs = await apiGet('/material-requests?status=');
+      const relReqs = Array.isArray(allReqs) ? allReqs.filter(r => r.original_shipment_id === row.id) : [];
+      for (const req of relReqs) {
+        timeline.push({
+          icon: req.request_type === 'ADDITIONAL' ? '➕' : '🔄',
+          text: `${req.request_type === 'ADDITIONAL' ? 'Permintaan Tambahan' : 'Permintaan Pengganti'} ${req.request_number} — Status: ${req.status}`,
+          date: req.created_at, type: 'request'
+        });
+        if (req.child_shipment_id) {
+          timeline.push({ icon: '🚚', text: `Child Shipment ${req.child_shipment_number} dikirim`, date: req.approved_at, type: 'child_shipment' });
+        }
+      }
+      timeline.sort((a, b) => new Date(a.date) - new Date(b.date));
+      setDetailTimeline(timeline);
 
-    // Find child shipments
-    const children = shipments.filter(s => s.parent_shipment_id === row.id);
-    setDetailChildren(children);
+      // Find child shipments
+      const children = shipments.filter(s => s.parent_shipment_id === row.id);
+      setDetailChildren(children);
 
-    setShowDetail(true);
+      setShowDetail(true);
+    } catch (e) { toast.error(e.message || 'Gagal memuat detail'); }
   };
 
   const downloadDeliveryNote = async (row) => {
-    const res = await fetch(`/api/vendor-shipments/${row.id}`, { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    const content = [
-      `DELIVERY NOTE — ${data.shipment_number}`,
-      `Tipe: ${data.shipment_type || 'NORMAL'} ${data.parent_shipment_id ? `(Child dari: ${shipments.find(s=>s.id===data.parent_shipment_id)?.shipment_number || data.parent_shipment_id})` : ''}`,
-      `Tanggal: ${fmtDate(data.shipment_date)}`,
-      `Vendor: ${data.vendor_name}`,
-      `No. Surat Jalan: ${data.delivery_note_number || '-'}`,
-      `Status: ${data.status}`,
-      `Inspeksi: ${data.inspection_status || 'Belum'}`,
-      ``,
-      `ITEM:`,
-      ...((data.items || []).map((i, n) =>
-        `  ${n+1}. ${i.product_name} | SKU: ${i.sku} | ${i.size}/${i.color} | SN: ${i.serial_number || '-'} | Qty: ${i.qty_sent} pcs`
-      )),
-      ``,
-      `Catatan: ${data.notes || '-'}`
-    ].join('\n');
-    const blob = new Blob([content], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `DN-${data.shipment_number}.txt`; a.click();
-    URL.revokeObjectURL(url);
+    try {
+      const data = await apiGet(`/vendor-shipments/${row.id}`);
+      const content = [
+        `DELIVERY NOTE — ${data.shipment_number}`,
+        `Tipe: ${data.shipment_type || 'NORMAL'} ${data.parent_shipment_id ? `(Child dari: ${shipments.find(s=>s.id===data.parent_shipment_id)?.shipment_number || data.parent_shipment_id})` : ''}`,
+        `Tanggal: ${fmtDate(data.shipment_date)}`,
+        `Vendor: ${data.vendor_name}`,
+        `No. Surat Jalan: ${data.delivery_note_number || '-'}`,
+        `Status: ${data.status}`,
+        `Inspeksi: ${data.inspection_status || 'Belum'}`,
+        ``,
+        `ITEM:`,
+        ...((data.items || []).map((i, n) =>
+          `  ${n+1}. ${i.product_name} | SKU: ${i.sku} | ${i.size}/${i.color} | SN: ${i.serial_number || '-'} | Qty: ${i.qty_sent} pcs`
+        )),
+        ``,
+        `Catatan: ${data.notes || '-'}`
+      ].join('\n');
+      const blob = new Blob([content], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = `DN-${data.shipment_number}.txt`; a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) { toast.error(e.message || 'Gagal mengunduh DN'); }
   };
 
   const handleDelete = async () => {
-    await fetch(`/api/vendor-shipments/${confirmDelete.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
-    setConfirmDelete(null);
-    fetchAll();
+    try {
+      await apiDelete(`/vendor-shipments/${confirmDelete.id}`);
+      setConfirmDelete(null);
+      fetchAll();
+    } catch (e) { toast.error(e.message || 'Gagal menghapus'); }
   };
 
   const fmtDate = (d) => d ? new Date(d).toLocaleDateString('id-ID') : '-';
@@ -557,9 +559,7 @@ function ShipmentList({ token, userRole, hasPerm = () => false }) {
               <button
                 onClick={async () => {
                   try {
-                    const res = await fetch(`/api/export-pdf?type=vendor-shipment&id=${detailData.id}`, {
-                      headers: { Authorization: `Bearer ${token}` }
-                    });
+                    const res = await apiFetch(`/export-pdf?type=vendor-shipment&id=${detailData.id}`);
                     if (!res.ok) { toast.error('Gagal export PDF'); return; }
                     const blob = await res.blob();
                     const url = URL.createObjectURL(blob);
@@ -724,21 +724,16 @@ function MaterialRequestList({ token, userRole, requestType }) {
   useEffect(() => { fetchRequests(); }, [requestType]);
 
   const fetchRequests = async () => {
-    const res = await fetch(`/api/material-requests?request_type=${requestType}`, { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    setRequests(Array.isArray(data) ? data : []);
+    try {
+      const data = await apiGet(`/material-requests?request_type=${requestType}`);
+      setRequests(Array.isArray(data) ? data : []);
+    } catch (e) { setRequests([]); }
   };
 
   const handleAction = async (req, action) => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/material-requests/${req.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ status: action, admin_notes: adminNotes })
-      });
-      const data = await res.json();
-      if (!res.ok) { toast.error(data.detail || data.error || 'Gagal'); return; }
+      const data = await apiPut(`/material-requests/${req.id}`, { status: action, admin_notes: adminNotes });
       if (action === 'Approved' && data.child_shipment) {
         toast.success(`Disetujui! Child Shipment ${data.child_shipment_number} berhasil dibuat.`);
       } else if (action === 'Rejected') {
@@ -746,6 +741,8 @@ function MaterialRequestList({ token, userRole, requestType }) {
       }
       setShowDetail(false);
       fetchRequests();
+    } catch (e) {
+      toast.error(e.message || 'Gagal');
     } finally {
       setLoading(false);
     }
@@ -796,9 +793,7 @@ function MaterialRequestList({ token, userRole, requestType }) {
               <button
                 onClick={async () => {
                   try {
-                    const res = await fetch(`/api/export-pdf?type=material-request&id=${selectedReq.id}`, {
-                      headers: { Authorization: `Bearer ${token}` }
-                    });
+                    const res = await apiFetch(`/export-pdf?type=material-request&id=${selectedReq.id}`);
                     if (!res.ok) { toast.error('Gagal export PDF'); return; }
                     const blob = await res.blob();
                     const url = URL.createObjectURL(blob);
