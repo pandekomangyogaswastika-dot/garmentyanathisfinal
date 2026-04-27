@@ -1,0 +1,14 @@
+[
+  {
+    "content": "Clone GitHub repo and read all documents",
+    "status": "completed"
+  },
+  {
+    "content": "Copy all repo files to /app and install dependencies",
+    "status": "completed"
+  },
+  {
+    "content": "Clarify current state and next steps with user",
+    "status": "in_progress"
+  }
+]
