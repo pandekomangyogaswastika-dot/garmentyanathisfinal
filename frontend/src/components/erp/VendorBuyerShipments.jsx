@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import Modal from './Modal';
 import { apiGet, apiPost } from '../../lib/api';
 
-export default function VendorBuyerShipments({ token, user }) {
+export default function VendorBuyerShipments({ user }) {
   const [shipments, setShipments] = useState([]);
   const [jobs, setJobs] = useState([]);
   const [jobItems, setJobItems] = useState([]);

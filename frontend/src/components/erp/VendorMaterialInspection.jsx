@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import Modal from './Modal';
 import { apiGet, apiPost, apiFetch } from '../../lib/api';
 
-export default function VendorMaterialInspection({ token, user }) {
+export default function VendorMaterialInspection({ user }) {
   const [shipments, setShipments] = useState([]);
   const [inspections, setInspections] = useState([]);
   const [showModal, setShowModal] = useState(false);

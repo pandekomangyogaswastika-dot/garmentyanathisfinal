@@ -14,7 +14,7 @@ import { apiGet, apiPost, apiPut, apiDelete, apiFetch } from '../../lib/api';
 const STATUS_OPTIONS = ['Draft', 'Confirmed', 'Distributed', 'In Production', 'Completed', 'Closed'];
 const CLOSE_REASONS = ['Under Production', 'Over Production', 'Price Adjustment', 'Customer Agreement', 'Other'];
 
-export default function ProductionPOModule({ token, userRole, hasPerm = () => false }) {
+export default function ProductionPOModule({ userRole, hasPerm = () => false }) {
   const [pos, setPOs] = useState([]);
   const [products, setProducts] = useState([]);
   const [vendors, setVendors] = useState([]);
@@ -425,7 +425,6 @@ export default function ProductionPOModule({ token, userRole, hasPerm = () => fa
         actions={
           <div className="flex items-center gap-2">
             <ImportExportPanel 
-              token={token} 
               importType="production-pos" 
               exportType="production-pos" 
               exportFilters={{ status: filterStatus }}
@@ -826,7 +825,6 @@ export default function ProductionPOModule({ token, userRole, hasPerm = () => fa
 
             {/* File Attachments */}
             <FileAttachmentPanel
-              token={token}
               entityType="production_po"
               entityId={detailData.id}
               userRole={userRole}

@@ -20,7 +20,7 @@ const STATUS_COLORS = {
   'Shipped Back': 'bg-emerald-100 text-emerald-700',
 };
 
-export default function ProductionReturnModule({ token, userRole }) {
+export default function ProductionReturnModule({ userRole }) {
   const [returns, setReturns] = useState([]);
   const [pos, setPOs] = useState([]);
   const [showModal, setShowModal] = useState(false);

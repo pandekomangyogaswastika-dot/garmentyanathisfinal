@@ -5,7 +5,7 @@ import Modal from './Modal';
 import { MiniBar } from './VendorShared';
 import { apiGet, apiPost } from '../../lib/api';
 
-export default function VendorProductionJobs({ token, user }) {
+export default function VendorProductionJobs({ user }) {
   const [jobs, setJobs] = useState([]);
   const [receivedShipments, setReceivedShipments] = useState([]);
   const [showModal, setShowModal] = useState(false);

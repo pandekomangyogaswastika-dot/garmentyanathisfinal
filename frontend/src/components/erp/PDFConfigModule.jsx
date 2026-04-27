@@ -92,7 +92,7 @@ function SortableColumn({ col, selected, required, onToggle }) {
   );
 }
 
-export default function PDFConfigModule({ token, userRole }) {
+export default function PDFConfigModule({ userRole }) {
   const [configs, setConfigs] = useState([]);
   const [columns, setColumns] = useState([]);
   const [selectedType, setSelectedType] = useState('');

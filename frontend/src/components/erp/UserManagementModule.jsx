@@ -9,7 +9,7 @@ import { apiGet, apiPost, apiPut, apiDelete } from '../../lib/api';
 
 const SYSTEM_ROLES = ['admin', 'vendor', 'buyer', 'superadmin'];
 
-export default function UserManagementModule({ token }) {
+export default function UserManagementModule() {
   const [users, setUsers] = useState([]);
   const [customRoles, setCustomRoles] = useState([]);
   const [vendors, setVendors] = useState([]);

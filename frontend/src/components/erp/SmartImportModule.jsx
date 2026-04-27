@@ -123,7 +123,7 @@ function ConfidenceBadge({ confidence, method }) {
   return <span className="text-xs px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-medium">{confidence || 0}%</span>;
 }
 
-export default function SmartImportModule({ token }) {
+export default function SmartImportModule() {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [loadingMsg, setLoadingMsg] = useState('');

@@ -10,7 +10,7 @@ import FileAttachmentPanel from './FileAttachmentPanel';
 import ImportExportPanel from './ImportExportPanel';
 import { apiGet, apiPost, apiDelete, apiFetch } from '../../lib/api';
 
-export default function BuyerShipmentModule({ token, userRole, hasPerm = () => false }) {
+export default function BuyerShipmentModule({ userRole, hasPerm = () => false }) {
   const [shipments, setShipments] = useState([]);
   const [pos, setPOs] = useState([]);
   const [poItems, setPoItems] = useState([]);
@@ -324,7 +324,7 @@ export default function BuyerShipmentModule({ token, userRole, hasPerm = () => f
             <Plus className="w-4 h-4" /> Buat Buyer Shipment
           </button>
         )}
-        <ImportExportPanel token={token} importType={null} exportType="buyer-shipments" />
+        <ImportExportPanel importType={null} exportType="buyer-shipments" />
       </div>
 
       <DataTable columns={columns} data={shipments} loading={loading}
@@ -567,7 +567,7 @@ export default function BuyerShipmentModule({ token, userRole, hasPerm = () => f
               </div>
             )}
 
-            <FileAttachmentPanel entityType="buyer_shipment" entityId={detailData.id} token={token} />
+            <FileAttachmentPanel entityType="buyer_shipment" entityId={detailData.id} />
           </div>
         </Modal>
       )}

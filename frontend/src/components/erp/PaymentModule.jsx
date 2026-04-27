@@ -28,7 +28,7 @@ function getDateRange(filter) {
 const fmt = (v) => 'Rp ' + Number(v || 0).toLocaleString('id-ID');
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('id-ID') : '-';
 
-export default function PaymentModule({ token, userRole, prefillInvoice }) {
+export default function PaymentModule({ userRole, prefillInvoice }) {
   const [payments, setPayments] = useState([]); // current tab's paginated rows
   const [invoices, setInvoices] = useState([]); // for modal dropdown only
   const [stats, setStats] = useState({ totalCashIn: 0, totalCashOut: 0, vendorCount: 0, customerCount: 0 });

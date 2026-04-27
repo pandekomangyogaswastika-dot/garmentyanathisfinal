@@ -7,7 +7,7 @@ import StatusBadge from './StatusBadge';
 import ConfirmDialog from './ConfirmDialog';
 import { apiGet, apiPost, apiPut, apiDelete } from '../../lib/api';
 
-export default function ProductionProgressModule({ token, userRole }) {
+export default function ProductionProgressModule({ userRole }) {
   const [workOrders, setWorkOrders] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);

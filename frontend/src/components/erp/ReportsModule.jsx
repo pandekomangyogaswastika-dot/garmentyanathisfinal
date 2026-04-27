@@ -17,7 +17,7 @@ const fmt = (v) => 'Rp ' + Number(v || 0).toLocaleString('id-ID');
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('id-ID') : '-';
 const fmtNum = (v) => (v || 0).toLocaleString('id-ID');
 
-export default function ReportsModule({ token }) {
+export default function ReportsModule() {
   const [activeReport, setActiveReport] = useState('production');
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);

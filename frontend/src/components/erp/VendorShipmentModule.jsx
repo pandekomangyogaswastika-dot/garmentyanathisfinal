@@ -18,7 +18,7 @@ const TABS = [
   { id: 'replacement', label: 'Permintaan Pengganti', icon: AlertTriangle },
 ];
 
-export default function VendorShipmentModule({ token, userRole, hasPerm = () => false }) {
+export default function VendorShipmentModule({ userRole, hasPerm = () => false }) {
   const [activeTab, setActiveTab] = useState('shipments');
 
   return (
@@ -47,15 +47,15 @@ export default function VendorShipmentModule({ token, userRole, hasPerm = () => 
       </div>
 
       {/* Tab Content */}
-      {activeTab === 'shipments' && <ShipmentList token={token} userRole={userRole} hasPerm={hasPerm} />}
-      {activeTab === 'additional' && <MaterialRequestList token={token} userRole={userRole} requestType="ADDITIONAL" />}
-      {activeTab === 'replacement' && <MaterialRequestList token={token} userRole={userRole} requestType="REPLACEMENT" />}
+      {activeTab === 'shipments' && <ShipmentList userRole={userRole} hasPerm={hasPerm} />}
+      {activeTab === 'additional' && <MaterialRequestList userRole={userRole} requestType="ADDITIONAL" />}
+      {activeTab === 'replacement' && <MaterialRequestList userRole={userRole} requestType="REPLACEMENT" />}
     </div>
   );
 }
 
 // ─── SHIPMENT LIST ─────────────────────────────────────────────────────────────
-function ShipmentList({ token, userRole, hasPerm = () => false }) {
+function ShipmentList({ userRole, hasPerm = () => false }) {
   const [shipments, setShipments] = useState([]);
   const [vendors, setVendors] = useState([]);
   const [pos, setPOs] = useState([]);
@@ -282,7 +282,7 @@ function ShipmentList({ token, userRole, hasPerm = () => false }) {
           value={search} onChange={e => setSearch(e.target.value)}
         />
         <div className="flex items-center gap-2">
-          <ImportExportPanel token={token} importType={null} exportType="vendor-shipments" />
+          <ImportExportPanel importType={null} exportType="vendor-shipments" />
           {canCreate && (
             <button onClick={() => { setForm({ shipment_number: '', delivery_note_number: '', vendor_id: '', shipment_date: new Date().toISOString().split('T')[0], notes: '', items: [] }); setSelectedPO(null); setPoItems([]); setPoAccessories([]); setShowModal(true); }}
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">
@@ -700,7 +700,7 @@ function ShipmentList({ token, userRole, hasPerm = () => false }) {
             )}
 
             {/* File Attachments */}
-            <FileAttachmentPanel token={token} entityType="vendor_shipment" entityId={detailData.id} />
+            <FileAttachmentPanel entityType="vendor_shipment" entityId={detailData.id} />
           </div>
         </Modal>
       )}
@@ -711,7 +711,7 @@ function ShipmentList({ token, userRole, hasPerm = () => false }) {
 }
 
 // ─── MATERIAL REQUEST LIST (Additional/Replacement) ───────────────────────────
-function MaterialRequestList({ token, userRole, requestType }) {
+function MaterialRequestList({ userRole, requestType }) {
   const [requests, setRequests] = useState([]);
   const [showDetail, setShowDetail] = useState(false);
   const [selectedReq, setSelectedReq] = useState(null);

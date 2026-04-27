@@ -7,7 +7,7 @@ import ConfirmDialog from './ConfirmDialog';
 import ImportExportPanel from './ImportExportPanel';
 import { apiGet, apiPost, apiPut, apiDelete } from '../../lib/api';
 
-export default function ProductsModule({ token, userRole, hasPerm = () => false }) {
+export default function ProductsModule({ userRole, hasPerm = () => false }) {
   const [showModal, setShowModal] = useState(false);
   const [showVariantModal, setShowVariantModal] = useState(false);
   const [editData, setEditData] = useState(null);
@@ -225,7 +225,7 @@ export default function ProductsModule({ token, userRole, hasPerm = () => false 
         ) : null}
         actions={
           <div className="flex items-center gap-2">
-            <ImportExportPanel token={token} importType="products" exportType={null} onImportSuccess={() => refetchProducts()} />
+            <ImportExportPanel importType="products" exportType={null} onImportSuccess={() => refetchProducts()} />
             {isSuperAdmin && (
               <button onClick={openCreate} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700" data-testid="add-product-btn">
                 <Plus className="w-4 h-4" /> Tambah Produk

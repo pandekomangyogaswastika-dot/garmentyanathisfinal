@@ -23,7 +23,7 @@ const STATUS_COLORS = {
 const fmt = (v) => 'Rp ' + Number(v || 0).toLocaleString('id-ID');
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('id-ID') : '-';
 
-export default function ManualInvoiceModule({ token, userRole }) {
+export default function ManualInvoiceModule({ userRole }) {
   const [invoices, setInvoices] = useState([]);
   const [pos, setPos] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -323,7 +323,7 @@ export default function ManualInvoiceModule({ token, userRole }) {
           <p className="text-slate-500 text-sm mt-1">Buat invoice manual dengan qty/harga yang bisa disesuaikan. Invoice manual menjadi dokumen resmi menggantikan invoice otomatis.</p>
         </div>
         <div className="flex items-center gap-2">
-          <ImportExportPanel token={token} importType={null} exportType="invoices" />
+          <ImportExportPanel importType={null} exportType="invoices" />
           {canEdit && (
             <button onClick={openCreate} className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700">
               <Plus className="w-4 h-4" /> Buat Invoice Manual

@@ -38,11 +38,11 @@ export default function VendorPortalApp({ user, token, onLogout }) {
     switch (activeModule) {
       case 'dashboard':       return <VendorDashboard token={token} user={user} onNavigate={setActiveModule} />;
       case 'receiving':       return <VendorReceiving token={token} user={user} />;
-      case 'inspeksi':        return <VendorMaterialInspection token={token} user={user} />;
-      case 'production-jobs': return <VendorProductionJobs token={token} user={user} />;
+      case 'inspeksi':        return <VendorMaterialInspection user={user} />;
+      case 'production-jobs': return <VendorProductionJobs user={user} />;
       case 'progress':        return <VendorProgress token={token} user={user} />;
       case 'defect-reports':  return <VendorDefectReports token={token} user={user} />;
-      case 'buyer-shipments': return <VendorBuyerShipments token={token} user={user} />;
+      case 'buyer-shipments': return <VendorBuyerShipments user={user} />;
       case 'serial-tracking': return <VendorSerialTracking token={token} user={user} />;
       case 'variance-report': return <VendorVarianceReport token={token} user={user} />;
       case 'reminders':       return <VendorReminderInbox token={token} user={user} />;
