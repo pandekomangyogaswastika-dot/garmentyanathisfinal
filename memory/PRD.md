@@ -29,6 +29,8 @@ Native `fetch()` is now **forbidden** outside `lib/api.js`.
   - ProductionPOModule.jsx (17 fetches), VendorShipmentModule.jsx (14), ManualInvoiceModule.jsx (12), BuyerShipmentModule.jsx (10), SmartImportModule.jsx (9), ProductionReturnModule.jsx (8), ProductsModule.jsx (7), ProductionProgressModule.jsx (7), UserManagementModule.jsx (7), PDFConfigModule.jsx (7)
 - **Verified by `grep -rln 'fetch(' /app/frontend/src/`**: only `/app/frontend/src/lib/api.js` remains
 - **Regression test**: testing_agent_v3_fork iteration_20.json — 100% pass, 0 console/page errors across all 15 modules
+- **Phase 11 dead-prop cleanup** (this session, 2026-02-27): removed dead `token` prop from signature of 15 migrated modules + 2 internal subcomponents (ShipmentList, MaterialRequestList in VendorShipmentModule); removed `token={token}` JSX pass-through from App.js, VendorPortalApp.jsx, and internal calls to ImportExportPanel/FileAttachmentPanel within the 6 affected modules
+- **Regression test**: testing_agent_v3_fork iteration_21.json — 100% pass, 0 ReferenceError, 0 console errors
 
 ## Backlog / Roadmap
 ### P1 — Polishing & DX
