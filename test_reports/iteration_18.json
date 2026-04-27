@@ -14,7 +14,7 @@
         "impact": "Login fails with 404 error, preventing access to vendor portal",
         "fix_priority": "HIGH",
         "affected_selectors": ["form", "input[type='email']", "input[type='password']"],
-        "details": "API client should use REACT_APP_BACKEND_URL (https://erp-production-track.preview.emergentagent.com) but requests go to localhost:3000/api"
+        "details": "API client should use REACT_APP_BACKEND_URL (https://garment-erp-phase11b.preview.emergentagent.com) but requests go to localhost:3000/api"
       }
     ],
     "design_issues": []

@@ -13,7 +13,7 @@
 - ✅ **Completed (refactor):** Split monolithic `VendorPortalApp.jsx` into modular Vendor components; created centralized API client `frontend/src/lib/api.js`.
 - ✅ **Completed:** Removed **“Made with Emergent”** badge (HTML anchor + external script injection) and restarted frontend.
 - ✅ **Verified (iteration_19):** Full regression test suite passed — **Backend 100% (21/21)**, **Frontend 100%** including badge removal.
-- 🎯 **Current Focus (P1):** Migrate frontend **inline `fetch()`** calls to centralized `src/lib/api.js` client to standardize auth headers, error handling, and downloads.
+- 🎯 **Current Focus (P1):** Frontend API standardization — migrate remaining inline network calls to centralized `frontend/src/lib/api.js` to standardize auth headers, error handling, and downloads.
 
 ---
 
@@ -161,11 +161,11 @@ Current UI used to rely on **client-side pagination** (`DataTable.jsx` slices ar
 
 ---
 
-## Phase 11 (NEW) — P1 Frontend API Standardization: Migrate inline `fetch()` → `src/lib/api.js`
+## Phase 11 — P1 Frontend API Standardization: Migrate inline network calls → `frontend/src/lib/api.js`
 **Status: 🟡 IN PROGRESS (P1)**
 
 ### Context / Problem
-Frontend currently contains **~200+ inline `fetch()` calls across 43 files**. This causes:
+Frontend previously contained **~200+ inline `fetch()` calls across ~43 files**. This caused:
 - Inconsistent auth header injection (manual `Bearer` usage in many places)
 - Inconsistent error handling (`res.ok` checks vary; JSON parse errors differ)
 - Repeated boilerplate (headers/body parsing) across modules
@@ -178,71 +178,88 @@ A centralized API client already exists:
 ### High-level Strategy
 Migrate in 3 phases **from simplest to heaviest**, and **test after each phase**.
 
-#### Phase A — Low-risk / core/shared (1–3 fetch calls per file)
-**Goal:** Reduce the highest leverage boilerplate first without destabilizing complex CRUD screens.
+#### Phase 11A — Low-risk / core/shared (1–3 calls per file)
+**Status: ✅ COMPLETED**
 
-**Target files (examples; final list is “all 1–3 call files” plus core/shared):**
-- Core/shared:
-  - `components/erp/Login.jsx`
-  - `App.js` (pending approvals poll + global search)
-  - `components/erp/Sidebar.jsx` (`/api/auth/me`)
-  - `components/erp/Dashboard.jsx` (metrics/analytics/reminders/vendors)
-  - `components/erp/VendorDashboard.jsx`
-- Also include 1–3-call modules:
-  - `components/erp/FinancialRecapModule.jsx`
-  - `components/erp/ProductionMonitoringModule.jsx`
-  - `components/erp/FileAttachmentPanel.jsx` (often multipart)
-  - `components/erp/SerialTrackingModule.jsx`
-  - `components/erp/ImportExportPanel.jsx`
-  - plus any other module with ≤3 `fetch()` occurrences
+**Result / Current state**
+- All core/shared modules now have **0 inline `fetch()`** and use `api.js`.
+- Current scan shows: `App.js:0`, and many modules at `0` (Phase 11A target satisfied).
 
-**Implementation rules (Phase A)**
-- Replace `fetch('/api/...')` with `apiGet('/...')` / `apiPost('/...')` where possible.
-- Ensure no caller manually prepends backend base URL.
-- For `FormData` uploads, use `apiPost(path, formData)` (api.js detects FormData and omits JSON content-type).
-- For downloads (PDF/Excel):
-  - If endpoint returns a blob: use `apiDownload(path, filename)`
-  - If special handling is needed (e.g., response headers), use `apiFetch` and custom blob save.
+**Notes**
+- Any remaining Emergent badge injection must remain removed via `frontend/public/index.html` (ensure this file stays in sync with repo changes).
 
-**Phase A test checklist**
+**Phase 11A test checklist (smoke)**
 - Login success + failed login shows correct error
 - Sidebar loads current user
 - Dashboard loads analytics + reminders
 - Vendor dashboard loads for vendor role (smoke)
 
-#### Phase B — Medium complexity (4–6 fetch calls per file)
-**Goal:** Convert mid-sized modules that usually combine list + CRUD operations.
+#### Phase 11B — Medium complexity (4–6 calls per file)
+**Status: 🟡 NEXT**
 
-**Target examples**
-- `VendorProgress.jsx`, `VendorVarianceReport.jsx`, `ReportsModule.jsx`, `OverproductionModule.jsx`, `RoleManagementModule.jsx`, `ActivityLogModule.jsx`, etc. (4–6 fetch calls)
+**Goal**
+Convert mid-sized modules that usually combine list + CRUD operations.
 
-**Phase B implementation rules**
+**Remaining target files (per current scan)**
+- 4 calls each:
+  - `frontend/src/components/erp/ActivityLogModule.jsx`
+  - `frontend/src/components/erp/GarmentsModule.jsx`
+  - `frontend/src/components/erp/OverproductionModule.jsx`
+  - `frontend/src/components/erp/RoleManagementModule.jsx`
+  - `frontend/src/components/erp/VendorProgress.jsx`
+  - `frontend/src/components/erp/VendorVarianceReport.jsx`
+- 5 calls each:
+  - `frontend/src/components/erp/PaymentModule.jsx`
+  - `frontend/src/components/erp/ReportsModule.jsx`
+  - `frontend/src/components/erp/VendorBuyerShipments.jsx`
+  - `frontend/src/components/erp/VendorProductionJobs.jsx`
+- 6 calls each:
+  - `frontend/src/components/erp/InvoiceModule.jsx`
+  - `frontend/src/components/erp/VendorDefectReports.jsx`
+  - `frontend/src/components/erp/VendorMaterialInspection.jsx`
+
+**Phase 11B implementation rules**
 - Introduce helper functions inside module: `loadX`, `saveY`, `deleteZ` using `api*` methods.
 - Replace repeated header creation with client calls.
-- Normalize error to `try/catch` with user-friendly message; remove scattered `alert(JSON.stringify(err))` patterns.
+- Normalize error handling into `try/catch` with user-friendly message.
+- Prefer `apiDownload()` for PDF/Excel exports; use `apiFetch()` when custom headers/filenames are required.
 
-**Phase B test checklist**
+**Phase 11B test checklist**
 - CRUD happy path per module (create/edit/delete where applicable)
 - Filters + server-side pagination still functioning
+- Vendor role access still restricted properly (401/403 behaviors preserved)
 
-#### Phase C — Heaviest modules (7+ fetch calls per file)
-**Goal:** Convert the largest screens last, when the pattern is proven.
+#### Phase 11C — Heaviest modules (7+ calls per file)
+**Status: 🟡 UPCOMING (after 11B)**
 
-**Target examples (highest counts)**
-- `ProductionPOModule.jsx` (~17)
-- `VendorShipmentModule.jsx` (~14)
-- `ManualInvoiceModule.jsx` (~12)
-- `BuyerShipmentModule.jsx` (~10)
-- `SmartImportModule.jsx` (~9)
-- `ProductionReturnModule.jsx` (~8)
-- `ProductsModule.jsx`, `ProductionProgressModule.jsx`, `PDFConfigModule.jsx`, `UserManagementModule.jsx` (~7)
+**Goal**
+Convert the largest screens last, after patterns are proven.
 
-**Phase C implementation rules**
-- Prefer small, mechanical changes per PR/commit chunk to reduce merge risk.
+**Remaining target files (per current scan)**
+- 7 calls each:
+  - `frontend/src/components/erp/PDFConfigModule.jsx`
+  - `frontend/src/components/erp/ProductionProgressModule.jsx`
+  - `frontend/src/components/erp/ProductsModule.jsx`
+  - `frontend/src/components/erp/UserManagementModule.jsx`
+- 8 calls:
+  - `frontend/src/components/erp/ProductionReturnModule.jsx`
+- 9 calls:
+  - `frontend/src/components/erp/SmartImportModule.jsx`
+- 10 calls:
+  - `frontend/src/components/erp/BuyerShipmentModule.jsx`
+- 12 calls:
+  - `frontend/src/components/erp/ManualInvoiceModule.jsx`
+- 14 calls:
+  - `frontend/src/components/erp/VendorShipmentModule.jsx`
+- 17 calls:
+  - `frontend/src/components/erp/ProductionPOModule.jsx`
+
+**Phase 11C implementation rules**
+- Prefer small, mechanical changes per commit chunk to reduce merge risk.
 - Convert list fetches first, then CRUD actions, then special cases (download/export).
-- Keep existing response shape handling to avoid UI regressions.
+- Keep existing response-shape handling to avoid UI regressions.
 
-**Phase C test checklist**
+**Phase 11C test checklist**
 - Production PO end-to-end flows (create/update, add items, status changes)
 - Shipment flows (vendor shipment create, buyer shipment, dispatch)
 - Smart Import end-to-end
@@ -250,23 +267,21 @@ Migrate in 3 phases **from simplest to heaviest**, and **test after each phase**
 
 ### Exit Criteria (Phase 11)
 - No inline `fetch()` remains in `frontend/src` (except where explicitly justified, e.g. very specialized streaming scenarios).
-- All API calls go through `src/lib/api.js` (or through thin wrappers built on top of it).
+- All API calls go through `frontend/src/lib/api.js` (or thin wrappers built on top of it).
 - Consistent handling of:
   - `Authorization` headers
   - `Content-Type` and FormData
   - Error messages (`detail` surfaced consistently)
   - 401 auto-logout behavior
-- Regression suite passes (backend + frontend) after Phase C.
+- Regression suite passes after Phase 11C.
 
 ---
 
 ## Next Actions (Immediate)
-1. **Phase 11A**: Migrate low-risk/core/shared modules to `src/lib/api.js` (Login, App.js, Sidebar, Dashboard, VendorDashboard + all 1–3 call files).
-2. Run smoke tests after Phase 11A.
-3. **Phase 11B**: Migrate medium complexity modules (4–6 calls).
-4. Run smoke tests after Phase 11B.
-5. **Phase 11C**: Migrate heavy modules (7+ calls) and validate complex workflows.
-6. Run full regression suite (same coverage as iteration_19).
+1. **Phase 11B:** Migrate the remaining 4–6 call modules listed above to `frontend/src/lib/api.js`.
+2. Run smoke tests after Phase 11B.
+3. **Phase 11C:** Migrate heavy modules (7+ calls) listed above and validate complex workflows.
+4. Run full regression suite (same coverage as iteration_19) after Phase 11C.
 
 ## Success Criteria
 - ✅ P0: Backend supports safe pagination and avoids unbounded reads.

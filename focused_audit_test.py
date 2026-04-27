@@ -13,7 +13,7 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional
 
 class FocusedAuditTester:
-    def __init__(self, base_url="https://erp-production-track.preview.emergentagent.com"):
+    def __init__(self, base_url="https://garment-erp-phase11b.preview.emergentagent.com"):
         self.base_url = base_url
         self.token = None
         self.tests_run = 0

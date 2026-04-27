@@ -5,6 +5,7 @@ import DataTable from './DataTable';
 import Modal from './Modal';
 import StatusBadge from './StatusBadge';
 import ConfirmDialog from './ConfirmDialog';
+import { apiFetch, apiGet, apiPut, apiDelete } from '../../lib/api';
 
 export default function InvoiceModule({ token, userRole, onNavigate }) {
   const [showDetail, setShowDetail] = useState(false);
@@ -29,38 +30,32 @@ export default function InvoiceModule({ token, userRole, onNavigate }) {
     if (sort_dir) params.set('sort_dir', sort_dir);
     if (search) params.set('search', search);
     if (filterStatus) params.set('status', filterStatus);
-    const res = await fetch(`/api/invoices?${params.toString()}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error('Gagal memuat invoice');
-    return res.json();
-  }, [filterStatus, token]);
+    return apiGet(`/invoices?${params.toString()}`);
+  }, [filterStatus]);
 
-  // Lightweight stats fetcher — sums Unpaid/Partial outstanding amounts.
-  // Capped at per_page=200 (backend max). For most workflows the unpaid set is small.
+  // Lightweight stats fetcher
   const fetchStats = useCallback(async () => {
     try {
-      const headers = { Authorization: `Bearer ${token}` };
-      const [unpaidRes, partialRes] = await Promise.all([
-        fetch('/api/invoices?status=Unpaid&page=1&per_page=200', { headers }),
-        fetch('/api/invoices?status=Partial&page=1&per_page=200', { headers }),
+      const [unpaidData, partialData] = await Promise.all([
+        apiGet('/invoices?status=Unpaid&page=1&per_page=200'),
+        apiGet('/invoices?status=Partial&page=1&per_page=200'),
       ]);
-      const unpaidEnv = await unpaidRes.json();
-      const partialEnv = await partialRes.json();
-      const unpaidItems = Array.isArray(unpaidEnv?.items) ? unpaidEnv.items : (Array.isArray(unpaidEnv) ? unpaidEnv : []);
-      const partialItems = Array.isArray(partialEnv?.items) ? partialEnv.items : (Array.isArray(partialEnv) ? partialEnv : []);
+      const unpaidItems = Array.isArray(unpaidData?.items) ? unpaidData.items : (Array.isArray(unpaidData) ? unpaidData : []);
+      const partialItems = Array.isArray(partialData?.items) ? partialData.items : (Array.isArray(partialData) ? partialData : []);
       const totalUnpaid = unpaidItems.reduce((s, i) => s + (i.total_amount || 0), 0);
       const totalPartial = partialItems.reduce((s, i) => s + ((i.total_amount || 0) - (i.total_paid || 0)), 0);
       setStats({ totalUnpaid, totalPartial });
     } catch (e) { console.error('stats fetch failed', e); }
-  }, [token]);
+  }, []);
 
   useEffect(() => { fetchStats(); }, [fetchStats, refetchKey]);
 
   const openDetail = async (row) => {
-    const res = await fetch(`/api/invoices/${row.id}`, { headers: { Authorization: `Bearer ${token}` } });
-    setDetailData(await res.json());
-    setShowDetail(true);
+    try {
+      const data = await apiGet(`/invoices/${row.id}`);
+      setDetailData(data);
+      setShowDetail(true);
+    } catch (e) { console.error(e); }
   };
 
   const openEdit = (row) => {
@@ -70,27 +65,21 @@ export default function InvoiceModule({ token, userRole, onNavigate }) {
 
   const handleEditSubmit = async (e) => {
     e.preventDefault();
-    const res = await fetch(`/api/invoices/${editForm.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify(editForm)
-    });
-    if (res.ok) {
+    try {
+      await apiPut(`/invoices/${editForm.id}`, editForm);
       alert('✅ Invoice berhasil diupdate');
       setShowEdit(false);
       refetchInvoices();
-    } else {
-      const err = await res.json();
-      alert(`❌ Gagal update invoice: ${err.detail || 'Unknown error'}`);
+    } catch (err) {
+      alert(`❌ Gagal update invoice: ${err.message}`);
     }
   };
 
   const handleDelete = async () => {
     if (!confirmDelete) return;
-    await fetch(`/api/invoices/${confirmDelete.id}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` }
-    });
+    try {
+      await apiDelete(`/invoices/${confirmDelete.id}`);
+    } catch (e) { console.error(e); }
     setConfirmDelete(null);
     refetchInvoices();
   };

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Shield, Plus, Edit2, Trash2, Check, X, ChevronDown, ChevronRight } from 'lucide-react';
+import { apiGet, apiPost, apiPut, apiDelete } from '../../lib/api';
 
 export default function RoleManagementModule({ token, userRole }) {
   const [roles, setRoles] = useState([]);
@@ -13,29 +14,31 @@ export default function RoleManagementModule({ token, userRole }) {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [rolesRes, permsRes] = await Promise.all([
-        fetch('/api/roles', { headers: { Authorization: `Bearer ${token}` } }),
-        fetch('/api/permissions', { headers: { Authorization: `Bearer ${token}` } })
+      const [rolesData, permsData] = await Promise.all([
+        apiGet('/roles'),
+        apiGet('/permissions'),
       ]);
-      setRoles(await rolesRes.json());
-      setPermissions(await permsRes.json());
+      setRoles(Array.isArray(rolesData) ? rolesData : []);
+      setPermissions(Array.isArray(permsData) ? permsData : []);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
-  }, [token]);
+  }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const handleSave = async () => {
-    const method = editRole ? 'PUT' : 'POST';
-    const url = editRole ? `/api/roles/${editRole.id}` : '/api/roles';
     try {
-      const res = await fetch(url, {
-        method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(form)
-      });
-      if (res.ok) { fetchData(); setShowForm(false); setEditRole(null); }
-      else { const d = await res.json(); alert(d.detail || d.error || 'Error'); }
-    } catch (e) { console.error(e); }
+      if (editRole) {
+        await apiPut(`/roles/${editRole.id}`, form);
+      } else {
+        await apiPost('/roles', form);
+      }
+      fetchData();
+      setShowForm(false);
+      setEditRole(null);
+    } catch (err) {
+      alert(err.message || 'Error');
+    }
   };
 
   const handleEdit = (role) => {
@@ -49,8 +52,10 @@ export default function RoleManagementModule({ token, userRole }) {
 
   const handleDelete = async (id) => {
     if (!window.confirm('Hapus role ini?')) return;
-    await fetch(`/api/roles/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
-    fetchData();
+    try {
+      await apiDelete(`/roles/${id}`);
+      fetchData();
+    } catch (e) { console.error(e); }
   };
 
   const togglePerm = (key) => {

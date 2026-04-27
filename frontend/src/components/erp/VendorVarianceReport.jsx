@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Plus, X, AlertTriangle, Download } from 'lucide-react';
+import { Plus, X, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import Modal from './Modal';
 import StatusBadge from './StatusBadge';
+import { apiGet, apiPost } from '../../lib/api';
 
 export default function VendorVarianceReport({ token, user }) {
   const [variances, setVariances] = useState([]);
@@ -21,13 +22,14 @@ export default function VendorVarianceReport({ token, user }) {
 
   const fetchAll = async () => {
     setLoading(true);
-    const [vRes, jRes] = await Promise.all([
-      fetch('/api/production-variances', { headers: { Authorization: `Bearer ${token}` } }),
-      fetch('/api/production-jobs', { headers: { Authorization: `Bearer ${token}` } })
-    ]);
-    const [vData, jData] = await Promise.all([vRes.json(), jRes.json()]);
-    setVariances(Array.isArray(vData) ? vData : []);
-    setJobs(Array.isArray(jData) ? jData : []);
+    try {
+      const [vData, jData] = await Promise.all([
+        apiGet('/production-variances'),
+        apiGet('/production-jobs'),
+      ]);
+      setVariances(Array.isArray(vData) ? vData : []);
+      setJobs(Array.isArray(jData) ? jData : []);
+    } catch (e) { console.error(e); }
     setLoading(false);
   };
 
@@ -39,20 +41,20 @@ export default function VendorVarianceReport({ token, user }) {
   const handleJobChange = async (jobId) => {
     setForm(prev => ({ ...prev, job_id: jobId, items: [] }));
     if (!jobId) return;
-    // Fetch job items
-    const res = await fetch(`/api/production-jobs/${jobId}`, { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    const items = (data.items || []).map(ji => ({
-      job_item_id: ji.id,
-      product_name: ji.product_name,
-      sku: ji.sku,
-      size: ji.size,
-      color: ji.color,
-      ordered_qty: ji.ordered_qty || 0,
-      produced_qty: ji.produced_qty || 0,
-      variance_qty: 0
-    }));
-    setForm(prev => ({ ...prev, items }));
+    try {
+      const data = await apiGet(`/production-jobs/${jobId}`);
+      const items = (data.items || []).map(ji => ({
+        job_item_id: ji.id,
+        product_name: ji.product_name,
+        sku: ji.sku,
+        size: ji.size,
+        color: ji.color,
+        ordered_qty: ji.ordered_qty || 0,
+        produced_qty: ji.produced_qty || 0,
+        variance_qty: 0
+      }));
+      setForm(prev => ({ ...prev, items }));
+    } catch (e) { console.error(e); }
   };
 
   const updateItemVariance = (index, value) => {
@@ -73,18 +75,13 @@ export default function VendorVarianceReport({ token, user }) {
       toast.error('Harap input variance qty untuk minimal 1 item');
       return;
     }
-    const res = await fetch('/api/production-variances', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ ...form, items: itemsWithVariance })
-    });
-    if (res.ok) {
+    try {
+      await apiPost('/production-variances', { ...form, items: itemsWithVariance });
       toast.success('Laporan variance berhasil disimpan');
       setShowModal(false);
       fetchAll();
-    } else {
-      const err = await res.json();
-      toast.error(`Gagal: ${err.detail || 'Unknown error'}`);
+    } catch (err) {
+      toast.error(`Gagal: ${err.message || 'Unknown error'}`);
     }
   };
 

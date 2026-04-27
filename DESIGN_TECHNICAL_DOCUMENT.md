@@ -134,7 +134,7 @@ EMERGENT_LLM_KEY=<Optional: for file storage>
 
 #### Frontend (.env)
 ```bash
-REACT_APP_BACKEND_URL=https://erp-production-track.preview.emergentagent.com
+REACT_APP_BACKEND_URL=https://garment-erp-phase11b.preview.emergentagent.com
 ```
 
 **⚠️ CRITICAL:** Jangan pernah memodifikasi `REACT_APP_BACKEND_URL` dan `MONGO_URL` karena sudah dikonfigurasi oleh platform.
@@ -1335,7 +1335,7 @@ EMERGENT_LLM_KEY=optional-for-storage
 
 **Frontend `.env`:**
 ```bash
-REACT_APP_BACKEND_URL=https://erp-production-track.preview.emergentagent.com
+REACT_APP_BACKEND_URL=https://garment-erp-phase11b.preview.emergentagent.com
 ```
 
 ### Database Indexes

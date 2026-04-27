@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Plus, AlertOctagon, X } from 'lucide-react';
 import { toast } from 'sonner';
 import Modal from './Modal';
+import { apiGet, apiPost } from '../../lib/api';
 
 export default function VendorDefectReports({ token, user }) {
   const [reports, setReports] = useState([]);
@@ -22,29 +23,33 @@ export default function VendorDefectReports({ token, user }) {
   useEffect(() => { fetchReports(); fetchJobs(); fetchShipments(); }, []);
 
   const fetchReports = async () => {
-    const res = await fetch('/api/material-defect-reports', { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    setReports(Array.isArray(data) ? data : []);
+    try {
+      const data = await apiGet('/material-defect-reports');
+      setReports(Array.isArray(data) ? data : []);
+    } catch (e) { console.error(e); }
   };
 
   const fetchJobs = async () => {
-    const res = await fetch('/api/production-jobs', { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    setJobs(Array.isArray(data) ? data.filter(j => j.status === 'In Progress') : []);
+    try {
+      const data = await apiGet('/production-jobs');
+      setJobs(Array.isArray(data) ? data.filter(j => j.status === 'In Progress') : []);
+    } catch (e) { console.error(e); }
   };
 
   const fetchShipments = async () => {
-    const res = await fetch('/api/vendor-shipments', { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    setShipments(Array.isArray(data) ? data.filter(s => s.status === 'Received') : []);
+    try {
+      const data = await apiGet('/vendor-shipments');
+      setShipments(Array.isArray(data) ? data.filter(s => s.status === 'Received') : []);
+    } catch (e) { console.error(e); }
   };
 
   const handleJobSelect = async (jobId) => {
     setForm(f => ({ ...f, job_id: jobId, job_item_id: '', sku: '', product_name: '', size: '', color: '' }));
     if (!jobId) { setJobItems([]); return; }
-    const res = await fetch(`/api/production-job-items?job_id=${jobId}`, { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    setJobItems(Array.isArray(data) ? data : []);
+    try {
+      const data = await apiGet(`/production-job-items?job_id=${jobId}`);
+      setJobItems(Array.isArray(data) ? data : []);
+    } catch (e) { console.error(e); }
   };
 
   const handleItemSelect = (itemId) => {
@@ -60,13 +65,7 @@ export default function VendorDefectReports({ token, user }) {
     e.preventDefault();
     setLoading(true);
     try {
-      const res = await fetch('/api/material-defect-reports', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ ...form, defect_qty: Number(form.defect_qty) })
-      });
-      const data = await res.json();
-      if (!res.ok) { toast.error(data.detail || data.error || 'Gagal menyimpan laporan'); return; }
+      const data = await apiPost('/material-defect-reports', { ...form, defect_qty: Number(form.defect_qty) });
       setShowModal(false);
       fetchReports();
 
@@ -75,10 +74,8 @@ export default function VendorDefectReports({ token, user }) {
         `✅ Laporan cacat berhasil disimpan!\n\nDitemukan ${form.defect_qty} pcs material CACAT.\nApakah Anda ingin mengajukan Permintaan Material Pengganti kepada ERP?`
       );
       if (confirmReplace && form.shipment_id) {
-        const reqRes = await fetch('/api/material-requests', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({
+        try {
+          const reqData = await apiPost('/material-requests', {
             request_type: 'REPLACEMENT',
             original_shipment_id: form.shipment_id,
             defect_report_id: data.id,
@@ -88,15 +85,16 @@ export default function VendorDefectReports({ token, user }) {
               serial_number: '', requested_qty: Number(form.defect_qty),
               reason: `${form.defect_type}: ${form.description}`
             }]
-          })
-        });
-        const reqData = await reqRes.json();
-        if (reqRes.ok) {
+          });
           toast.success(`Permintaan Pengganti ${reqData.request_number} berhasil diajukan ke ERP`);
+        } catch (reqErr) {
+          toast.error(`Gagal mengajukan permintaan: ${reqErr.message}`);
         }
       } else if (confirmReplace && !form.shipment_id) {
         toast.error('Pilih Shipment Asal terlebih dahulu untuk mengajukan permintaan pengganti.');
       }
+    } catch (err) {
+      toast.error(err.message || 'Gagal menyimpan laporan');
     } finally {
       setLoading(false);
     }
@@ -156,7 +154,6 @@ export default function VendorDefectReports({ token, user }) {
               Laporan cacat akan diteruskan ke tim ERP. Jika material perlu diganti, sistem akan membantu Anda mengajukan permintaan pengganti.
             </div>
 
-            {/* Shipment Asal - important for replacement request */}
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Shipment Asal <span className="text-xs text-slate-400">(diperlukan untuk permintaan pengganti)</span></label>
               <select className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white"

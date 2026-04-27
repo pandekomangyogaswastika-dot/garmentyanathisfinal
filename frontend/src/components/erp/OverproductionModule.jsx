@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { RefreshCw, Filter, TrendingUp, TrendingDown, AlertTriangle, X, Eye, CheckCircle, Clock } from 'lucide-react';
 import { toast } from 'sonner';
+import { apiFetch, apiGet, apiPut } from '../../lib/api';
 
 export default function OverproductionModule({ token }) {
   const [variances, setVariances] = useState([]);
@@ -34,13 +35,11 @@ export default function OverproductionModule({ token }) {
       if (filterTo) params.append('to', filterTo);
       if (searchQuery) params.append('search', searchQuery);
       
-      const [vRes, sRes, vendorRes] = await Promise.all([
-        fetch(`/api/production-variances?${params}`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`/api/production-variances/stats?${params}`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch('/api/garments', { headers: { Authorization: `Bearer ${token}` } })
+      const [vData, sData, vendorData] = await Promise.all([
+        apiGet(`/production-variances?${params}`),
+        apiGet(`/production-variances/stats?${params}`),
+        apiGet('/garments'),
       ]);
-      
-      const [vData, sData, vendorData] = await Promise.all([vRes.json(), sRes.json(), vendorRes.json()]);
       
       setVariances(Array.isArray(vData) ? vData : []);
       setStats(sData);
@@ -62,17 +61,13 @@ export default function OverproductionModule({ token }) {
       toast.error('Status wajib diisi');
       return;
     }
-    const res = await fetch(`/api/production-variances/${selectedVariance.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify(statusForm)
-    });
-    if (res.ok) {
+    try {
+      await apiPut(`/production-variances/${selectedVariance.id}`, statusForm);
       toast.success('Status variance berhasil diupdate');
       setShowDetail(false);
       fetchAll();
-    } else {
-      toast.error('Gagal update status');
+    } catch (err) {
+      toast.error(err.message || 'Gagal update status');
     }
   };
 

@@ -1,14 +1,22 @@
 [
   {
-    "content": "Clone GitHub repo and read all documents",
+    "content": "Phase 11A: Confirm already complete (0 fetch() in core/shared files)",
     "status": "completed"
   },
   {
-    "content": "Copy all repo files to /app and install dependencies",
-    "status": "completed"
-  },
-  {
-    "content": "Clarify current state and next steps with user",
+    "content": "Phase 11B: Migrate 13 medium-complexity files (4-6 fetch() calls each)",
     "status": "in_progress"
+  },
+  {
+    "content": "Phase 11B: Run smoke tests after migration",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 11C: Migrate 10 heavy files (7+ fetch() calls each)",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 11C: Run full regression suite",
+    "status": "pending"
   }
 ]

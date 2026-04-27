@@ -3,6 +3,7 @@ import { Plus, Info, AlertTriangle, X, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import Modal from './Modal';
 import { MiniBar } from './VendorShared';
+import { apiGet, apiPost } from '../../lib/api';
 
 export default function VendorProgress({ token, user }) {
   const [jobs, setJobs] = useState([]);
@@ -19,9 +20,10 @@ export default function VendorProgress({ token, user }) {
   useEffect(() => { fetchJobs(); }, []);
 
   const fetchJobs = async () => {
-    const res = await fetch('/api/production-jobs', { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    setJobs(Array.isArray(data) ? data.filter(j => j.status === 'In Progress') : []);
+    try {
+      const data = await apiGet('/production-jobs');
+      setJobs(Array.isArray(data) ? data.filter(j => j.status === 'In Progress') : []);
+    } catch (e) { console.error(e); }
   };
 
   const loadJobItems = async (jobId) => {
@@ -30,18 +32,20 @@ export default function VendorProgress({ token, user }) {
     setSelectedChildJobId('');
     setChildJobItems([]);
     if (!jobId) { setJobItems([]); setChildJobs([]); return; }
-    const res = await fetch(`/api/production-job-items?job_id=${jobId}`, { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    setJobItems(Array.isArray(data) ? data : []);
-    setChildJobs(job?.child_jobs || []);
+    try {
+      const data = await apiGet(`/production-job-items?job_id=${jobId}`);
+      setJobItems(Array.isArray(data) ? data : []);
+      setChildJobs(job?.child_jobs || []);
+    } catch (e) { console.error(e); }
   };
 
   const loadChildJobItems = async (childJobId) => {
     setSelectedChildJobId(childJobId);
     if (!childJobId) { setChildJobItems([]); return; }
-    const res = await fetch(`/api/production-job-items?job_id=${childJobId}`, { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    setChildJobItems(Array.isArray(data) ? data : []);
+    try {
+      const data = await apiGet(`/production-job-items?job_id=${childJobId}`);
+      setChildJobItems(Array.isArray(data) ? data : []);
+    } catch (e) { console.error(e); }
   };
 
   const openProgress = (item) => {
@@ -54,23 +58,22 @@ export default function VendorProgress({ token, user }) {
     e.preventDefault();
     if (!selectedItem) return;
     setLoading(true);
-    const res = await fetch('/api/production-progress', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({
+    try {
+      await apiPost('/production-progress', {
         job_item_id: selectedItem.id,
         progress_date: form.progress_date,
         completed_quantity: Number(form.completed_quantity),
         notes: form.notes
-      })
-    });
-    const data = await res.json();
-    setLoading(false);
-    if (!res.ok) { toast.error(data.detail || data.error || 'Gagal menyimpan progress'); return; }
-    setShowModal(false);
-    loadJobItems(selectedJob?.id);
-    if (selectedChildJobId) loadChildJobItems(selectedChildJobId);
-    fetchJobs();
+      });
+      setShowModal(false);
+      loadJobItems(selectedJob?.id);
+      if (selectedChildJobId) loadChildJobItems(selectedChildJobId);
+      fetchJobs();
+    } catch (err) {
+      toast.error(err.message || 'Gagal menyimpan progress');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const renderJobItemsTable = (items, isChild = false) => {

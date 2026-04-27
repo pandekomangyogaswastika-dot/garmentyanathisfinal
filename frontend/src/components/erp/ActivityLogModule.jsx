@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { RefreshCw, Filter, Activity, Loader2 } from 'lucide-react';
 import PaginationFooter from './PaginationFooter';
+import { apiFetch, apiGet } from '../../lib/api';
 
 const ACTION_COLORS = {
   Create: 'bg-emerald-100 text-emerald-700',
@@ -45,9 +46,7 @@ export default function ActivityLogModule({ token }) {
       params.set('per_page', String(perPage));
       if (filterModule) params.set('module', filterModule);
       if (filterUser) params.set('user_id', filterUser);
-      const res = await fetch(`/api/activity-logs?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await apiFetch(`/activity-logs?${params.toString()}`);
       const data = await res.json();
       // Backend returns envelope when page/per_page provided
       if (data && Array.isArray(data.items)) {
@@ -68,12 +67,11 @@ export default function ActivityLogModule({ token }) {
     } finally {
       setLoading(false);
     }
-  }, [token, page, perPage, filterModule, filterUser]);
+  }, [page, perPage, filterModule, filterUser]);
 
   // Fetch action stats independently from current page (kept lightweight)
   const fetchStats = useCallback(async () => {
     try {
-      const headers = { Authorization: `Bearer ${token}` };
       const baseParams = new URLSearchParams();
       if (filterModule) baseParams.set('module', filterModule);
       if (filterUser) baseParams.set('user_id', filterUser);
@@ -83,7 +81,7 @@ export default function ActivityLogModule({ token }) {
         params.set('action', action);
         params.set('page', '1');
         params.set('per_page', '1');
-        const res = await fetch(`/api/activity-logs?${params.toString()}`, { headers });
+        const res = await apiFetch(`/activity-logs?${params.toString()}`);
         const data = await res.json();
         return [action, (data && typeof data.total === 'number') ? data.total : (Array.isArray(data) ? data.length : 0)];
       }));
@@ -91,28 +89,25 @@ export default function ActivityLogModule({ token }) {
       results.forEach(([k, v]) => { next[k] = v; });
       setStats(next);
     } catch (e) { /* non-critical */ }
-  }, [token, filterModule, filterUser]);
+  }, [filterModule, filterUser]);
 
   // Fetch a small sample to populate module-filter buttons (one-time)
   const fetchModuleOptions = useCallback(async () => {
     try {
-      const res = await fetch('/api/activity-logs?page=1&per_page=200', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await apiFetch('/activity-logs?page=1&per_page=200');
       const data = await res.json();
       const items = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : []);
       setModuleOptions([...new Set(items.map(l => l.module).filter(Boolean))]);
     } catch (_) { /* ignore */ }
-  }, [token]);
+  }, []);
 
   const fetchUsers = useCallback(async () => {
     try {
-      const res = await fetch('/api/users', { headers: { Authorization: `Bearer ${token}` } });
-      const data = await res.json();
+      const data = await apiGet('/users');
       const items = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : []);
       setUsers(items);
     } catch (_) { setUsers([]); }
-  }, [token]);
+  }, []);
 
   useEffect(() => { fetchUsers(); fetchModuleOptions(); }, [fetchUsers, fetchModuleOptions]);
   useEffect(() => { fetchLogs(); }, [fetchLogs]);

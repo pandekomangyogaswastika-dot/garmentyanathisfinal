@@ -6,6 +6,7 @@ import Modal from './Modal';
 import StatusBadge from './StatusBadge';
 import ConfirmDialog from './ConfirmDialog';
 import ImportExportPanel from './ImportExportPanel';
+import { apiGet, apiPost, apiPut, apiDelete } from '../../lib/api';
 
 export default function GarmentsModule({ token, userRole }) {
   const [garments, setGarments] = useState([]);
@@ -22,10 +23,11 @@ export default function GarmentsModule({ token, userRole }) {
   useEffect(() => { fetchGarments(); }, []);
 
   const fetchGarments = async (search = '') => {
-    const url = search ? `/api/garments?search=${search}` : '/api/garments';
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    setGarments(Array.isArray(data) ? data : []);
+    try {
+      const url = search ? `/garments?search=${search}` : '/garments';
+      const data = await apiGet(url);
+      setGarments(Array.isArray(data) ? data : []);
+    } catch (e) { console.error(e); }
   };
 
   const openCreate = () => {
@@ -42,29 +44,36 @@ export default function GarmentsModule({ token, userRole }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const url = editData ? `/api/garments/${editData.id}` : '/api/garments';
-    const method = editData ? 'PUT' : 'POST';
-    const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(form) });
-    const data = await res.json();
-    setShowModal(false);
-    if (!editData && data.vendor_account) {
-      setNewCredentials(data.vendor_account);
-      setShowCredModal(true);
+    try {
+      const data = editData
+        ? await apiPut(`/garments/${editData.id}`, form)
+        : await apiPost('/garments', form);
+      setShowModal(false);
+      if (!editData && data.vendor_account) {
+        setNewCredentials(data.vendor_account);
+        setShowCredModal(true);
+      }
+      fetchGarments();
+    } catch (err) {
+      alert(err.message || 'Gagal menyimpan vendor');
     }
-    fetchGarments();
   };
 
   const handleDelete = async () => {
     if (!confirmDelete) return;
-    await fetch(`/api/garments/${confirmDelete.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+    try {
+      await apiDelete(`/garments/${confirmDelete.id}`);
+    } catch (e) { console.error(e); }
     setConfirmDelete(null);
     fetchGarments();
   };
 
   const toggleStatus = async (row) => {
     const newStatus = row.status === 'active' ? 'inactive' : 'active';
-    await fetch(`/api/garments/${row.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ status: newStatus }) });
-    fetchGarments();
+    try {
+      await apiPut(`/garments/${row.id}`, { status: newStatus });
+      fetchGarments();
+    } catch (e) { console.error(e); }
   };
 
   const copyText = (text, key) => {
