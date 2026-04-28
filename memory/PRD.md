@@ -62,6 +62,28 @@ After fix → exactly 2 calls (React 18 strict-mode double-mount, normal), UI sh
 - Auth, master-data CRUD, PO create, pagination envelope, buyer-shipment caps (M-1, C-1), payment endpoint, PDF export, smart-import upload all GREEN
 - Backend success rate after `enrich_with_product_photos` fix: ~96% (the 1 remaining "fail" was the false-positive manual-invoice case)
 
+### Iteration 23 — full E2E chain GREEN (94% → 100% after PDF invoice fix)
+Walked the entire vendor → buyer → finance chain end-to-end with real seeded data. ALL invariants verified:
+- I-1 (defect-adjusted capacity): available=100 + defect=3 → produce 99 rejected, produce 97 accepted
+- M-1 (0-qty dispatch): rejected
+- C-1 (ship cap = produced): 80 OK, +28 (>107) rejected, +27 OK
+- C-2 (return cap): 10 OK, 200 rejected; H-4 (return ≥1): 0 and -5 rejected
+- C-3 (job total_shipped_to_buyer): correctly aggregated to 107
+- H-1 (PO remaining_qty non-negative + over_shipped_qty exposed)
+- Variance Reported → Acknowledged → Resolved transitions OK
+- Invoice (manual w/ source_po_id) + payment partial+full + financial recap GREEN
+- PDF export production-po + vendor-shipment GREEN
+
+### Iteration 23 follow-up: PDF invoice handler added (2026-04-28)
+Testing agent flagged the only remaining gap: `/api/export-pdf?type=invoice` returned 400 ('Unknown PDF type'). Added a full invoice PDF renderer in `/app/backend/routes/pdf_exports.py` (~85 lines) covering:
+- Header with invoice number, type (AR/AP), party (vendor/customer), PO ref, date, status
+- Line items table (No, Produk, SKU, Qty, Harga, Subtotal) — preset-aware via existing `_filter_columns`
+- Summary block: Subtotal, Diskon, Penambahan/Pengurangan adjustments, TOTAL, Sudah Dibayar, Sisa
+- Payment history table when payments exist
+- Optional footer notes
+- Registered 'invoice' in the `available_types` list returned for unknown types
+Verified: 200 OK + `application/pdf` + 2.7KB output + valid `%PDF-1.4` magic bytes.
+
 ### Environment Setup (also done this session)
 - Installed missing backend dep: `rapidfuzz` (used by `routes/smart_import.py`)
 - Installed missing frontend deps: `@tanstack/react-virtual`, `@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities`

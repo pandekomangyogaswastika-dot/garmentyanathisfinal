@@ -1116,10 +1116,93 @@ async def export_pdf(request: Request):
             return StreamingResponse(buf, media_type="application/pdf",
                                      headers={"Content-Disposition": f"attachment; filename=laporan_{report_type}_{datetime.now().strftime('%Y%m%d')}.pdf"})
 
+        # ──── INVOICE (AR/AP) ─────────────────────────────────────────────────
+        elif pdf_type == 'invoice':
+            inv_id = sp.get('id')
+            if not inv_id: raise HTTPException(400, 'id required')
+            inv = await db.invoices.find_one({'id': inv_id}, {'_id': 0})
+            if not inv: raise HTTPException(404, 'Invoice not found')
+            payments = await db.payments.find({'invoice_id': inv_id}, {'_id': 0}).sort('created_at', 1).to_list(None)
+            adjustments = await db.invoice_adjustments.find({'invoice_id': inv_id}, {'_id': 0}).sort('created_at', 1).to_list(None)
+            category = inv.get('invoice_category', '')
+            party_label = 'Vendor' if category == 'VENDOR' else 'Customer'
+            party_name = inv.get('vendor_or_customer_name') or inv.get('vendor_name') or inv.get('customer_name') or '-'
+            title = 'Invoice Hutang Vendor (AP)' if category == 'VENDOR' else 'Invoice Piutang Buyer (AR)'
+            elements = []
+            _pdf_header(elements, settings, title, info_pairs=[
+                ('No Invoice', inv.get('invoice_number', '')),
+                ('Tipe', inv.get('invoice_type', '')),
+                (party_label, party_name),
+                ('No PO', inv.get('po_number', '')),
+                ('Tanggal', _fmt_date(inv.get('created_at'))),
+                ('Status', inv.get('status', '')),
+            ], override=config)
+            # Items table
+            items = inv.get('invoice_items', []) or []
+            all_col_keys = ['no', 'product', 'sku', 'qty', 'price', 'subtotal']
+            headers = ['No', 'Produk', 'SKU', 'Qty', 'Harga', 'Subtotal']
+            data_rows = []
+            for idx, it in enumerate(items, 1):
+                price = it.get('cmt_price' if category == 'VENDOR' else 'selling_price', 0) or 0
+                qty = it.get('invoice_qty', it.get('qty', 0)) or 0
+                subtotal = it.get('subtotal', qty * price)
+                data_rows.append([
+                    idx, _safe_str(it.get('product_name', '')), _safe_str(it.get('sku', '')),
+                    qty, _fmt_money(price), _fmt_money(subtotal),
+                ])
+            if config and config.get('columns'):
+                headers, data_rows = _filter_columns(headers, all_col_keys, config['columns'], data_rows)
+            td = [headers] + data_rows
+            cw = [max(28, int(720 / max(1, len(headers))))] * len(headers)
+            t = Table(td, colWidths=cw, repeatRows=1)
+            t.setStyle(_pdf_table_style())
+            elements.append(t)
+            # Totals + adjustments + payments summary
+            elements.append(Spacer(1, 4*mm))
+            base_amount = inv.get('base_amount', inv.get('total_amount', 0)) or 0
+            total_add = sum((a.get('amount', 0) or 0) for a in adjustments if a.get('adjustment_type') == 'ADD')
+            total_deduct = sum((a.get('amount', 0) or 0) for a in adjustments if a.get('adjustment_type') == 'DEDUCT')
+            adjusted_total = base_amount + total_add - total_deduct
+            paid = inv.get('paid_amount', inv.get('total_paid', 0)) or 0
+            remaining = adjusted_total - paid
+            discount = inv.get('discount', 0) or 0
+            summary_rows = [['Subtotal', _fmt_money(base_amount + discount)]]
+            if discount: summary_rows.append(['Diskon', _fmt_money(-discount)])
+            if total_add: summary_rows.append(['Penambahan', _fmt_money(total_add)])
+            if total_deduct: summary_rows.append(['Pengurangan', _fmt_money(-total_deduct)])
+            summary_rows.append(['TOTAL', _fmt_money(adjusted_total)])
+            summary_rows.append(['Sudah Dibayar', _fmt_money(paid)])
+            summary_rows.append(['Sisa', _fmt_money(remaining)])
+            st = Table(summary_rows, colWidths=[120, 140], hAlign='RIGHT')
+            st.setStyle(_pdf_table_style())
+            st.setStyle(_pdf_total_row_style())
+            elements.append(st)
+            # Payment history
+            if payments:
+                elements.append(Spacer(1, 6*mm))
+                elements.append(Paragraph("<b>Riwayat Pembayaran:</b>", styles['Heading3']))
+                p_td = [['No', 'Tanggal', 'Metode', 'Jumlah', 'Catatan']]
+                for idx, p in enumerate(payments, 1):
+                    p_td.append([idx, _fmt_date(p.get('payment_date', p.get('created_at'))),
+                                 _safe_str(p.get('payment_method', '')),
+                                 _fmt_money(p.get('amount', 0)),
+                                 _safe_str(p.get('notes', ''))])
+                pt = Table(p_td, colWidths=[30, 90, 80, 100, 200])
+                pt.setStyle(_pdf_table_style())
+                elements.append(pt)
+            if inv.get('notes'):
+                elements.append(Spacer(1, 4*mm))
+                elements.append(Paragraph(f"<b>Notes:</b> {inv.get('notes', '')}", styles['Normal']))
+            _pdf_footer(elements, settings, override=config)
+            _build_pdf(buf, elements, page=None, orientation=(config or {}).get('page_orientation'))
+            fname = f"INV-{inv.get('invoice_number', 'unknown')}.pdf"
+            return StreamingResponse(buf, media_type="application/pdf",
+                                     headers={"Content-Disposition": f"attachment; filename={fname}"})
+
         else:
             all_types = [
                 'production-po', 'vendor-shipment', 'buyer-shipment', 'buyer-shipment-dispatch',
-                'production-return', 'material-request', 'production-report',
+                'production-return', 'material-request', 'production-report', 'invoice',
                 'report-production', 'report-progress', 'report-financial', 'report-shipment',
                 'report-defect', 'report-return', 'report-missing-material', 'report-replacement', 'report-accessory'
             ]
