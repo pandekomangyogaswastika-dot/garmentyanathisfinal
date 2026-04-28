@@ -32,6 +32,31 @@ Native `fetch()` is now **forbidden** outside `lib/api.js`.
 - **Phase 11 dead-prop cleanup** (this session, 2026-02-27): removed dead `token` prop from signature of 15 migrated modules + 2 internal subcomponents (ShipmentList, MaterialRequestList in VendorShipmentModule); removed `token={token}` JSX pass-through from App.js, VendorPortalApp.jsx, and internal calls to ImportExportPanel/FileAttachmentPanel within the 6 affected modules
 - **Regression test**: testing_agent_v3_fork iteration_21.json — 100% pass, 0 ReferenceError, 0 console errors
 
+## Phase 12 — Critical Bug Fix: Production PO infinite-fetch loop (2026-04-28)
+### Reported Issue
+User: "loading production po terlalu lama dan tidak terload" (Production PO never finishes loading).
+
+### Root Cause
+`DataTable.jsx`'s `runFetch` `useCallback` had `serverPagination` (parent-passed prop object) in its dep array. ProductionPOModule passes `serverPagination={{ fetcher, deps, ... }}` as inline object literal — every parent render produces a new object reference, which:
+1. Made `runFetch` reference change every render
+2. Triggered `useEffect [runFetch]` → re-fired the fetcher
+3. The fetcher itself called `setPOs(items)` on the parent → triggered re-render
+4. Loop step 1 → ∞ (verified ~20+ identical `/api/production-pos?page=1&per_page=20…` calls per page mount; UI stuck on "Memuat data…")
+
+Same trap latently affected every other module using `DataTable` server pagination (BuyerShipment, ProductsModule, etc.) — but the symptom was most visible in ProductionPO because its fetcher writes back to parent state.
+
+### Fix
+`/app/frontend/src/components/erp/DataTable.jsx`: store `serverPagination?.fetcher` in a `useRef` and read from it inside `runFetch`. Removed `serverPagination` from `runFetch` dep array. `deps` (filter primitives) still flow through `...deps` spread for legitimate refetch triggers.
+
+### Verification
+Reproduced before fix → ~20+ duplicate calls in <5s, UI stuck on "Memuat data…".
+After fix → exactly 2 calls (React 18 strict-mode double-mount, normal), UI shows "Tidak ada data" empty state correctly. Cross-module check on Accounts Payable confirms no breakage.
+
+### Environment Setup (also done this session)
+- Installed missing backend dep: `rapidfuzz` (used by `routes/smart_import.py`)
+- Installed missing frontend deps: `@tanstack/react-virtual`, `@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities`
+  (frontend was failing to compile before this — every page would have shown the red CRA error overlay)
+
 ## Backlog / Roadmap
 ### P1 — Polishing & DX
 - Add unit tests for `lib/api.js` covering auth-header injection, 401 auto-logout, JSON/FormData handling, blob downloads

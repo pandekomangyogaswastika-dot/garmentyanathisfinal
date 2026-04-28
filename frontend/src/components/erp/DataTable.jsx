@@ -110,14 +110,25 @@ export default function DataTable({
 
   // Track latest fetch to avoid race conditions
   const fetchSeqRef = useRef(0);
+  // Stabilize the fetcher reference — parents typically pass an inline arrow
+  // function inside an inline `serverPagination={{ fetcher: ... }}` object,
+  // which would otherwise change identity on every parent render and cause an
+  // infinite refetch loop (especially when the fetcher itself calls setState
+  // on the parent).
+  const fetcherRef = useRef(serverPagination?.fetcher);
+  useEffect(() => {
+    fetcherRef.current = serverPagination?.fetcher;
+  });
 
   const runFetch = useCallback(async () => {
     if (!isServerMode) return;
+    const fetcher = fetcherRef.current;
+    if (!fetcher) return;
     const seq = ++fetchSeqRef.current;
     setServerLoading(true);
     setServerError(null);
     try {
-      const env = await serverPagination.fetcher({
+      const env = await fetcher({
         page: serverPage,
         per_page: serverPerPage,
         sort_by: serverSort.key || undefined,
@@ -146,7 +157,7 @@ export default function DataTable({
       if (seq === fetchSeqRef.current) setServerLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isServerMode, serverPagination, serverPage, serverPerPage, serverSort.key, serverSort.dir, debouncedSearch, ...deps]);
+  }, [isServerMode, serverPage, serverPerPage, serverSort.key, serverSort.dir, debouncedSearch, ...deps]);
 
   useEffect(() => {
     if (!isServerMode) return;
