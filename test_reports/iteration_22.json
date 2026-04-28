@@ -1,0 +1,75 @@
+{
+  "summary": "Iteration 22 — Comprehensive backend + frontend regression for Garment ERP. Backend: 49/55 pytest pass (89%). Production PO infinite-loop regression VERIFIED FIXED (only 2 /api/production-pos calls on module open vs. previous infinite loop). Found 1 CRITICAL backend bug: GET /api/production-pos/{po_id} (and likely GET /api/vendor-shipments/{sid}) returns 500 due to undefined function `enrich_with_product_photos`. Manual invoice flow blocked: POST /api/invoices rejects with 'source_po_id wajib diisi'; spec mentioned /api/manual-invoices but route does not exist. Buyer Shipment caps (M-1 0-qty reject + C-1 phantom shipment reject) verified working. Pagination envelope verified. PDF export for production-po works (>1KB content). Smart Import upload endpoint reachable. All 27 list endpoints reachable & 200 OK.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "GET /api/production-pos/{po_id}",
+        "issue": "Returns 500 — NameError: name 'enrich_with_product_photos' is not defined (server.py line 752). Same call exists at line 1215 inside GET /api/vendor-shipments/{sid} so that endpoint is likely broken too. Function is referenced but never defined anywhere in /app/backend/server.py (or routes/). Blocks PO detail view in frontend (Production PO 'view' icon, Buat PO edit-mode prefill, etc.).",
+        "priority": "CRITICAL"
+      },
+      {
+        "endpoint": "POST /api/invoices (manual invoice creation)",
+        "issue": "Rejects every payload without `source_po_id` with 400 'source_po_id wajib diisi'. Spec called for /api/manual-invoices endpoint but that route does NOT exist in server.py. Either (a) add a dedicated /api/manual-invoices POST that allows null source_po_id, or (b) make source_po_id optional when invoice_type is manual. Currently impossible to create AR/AP invoices not tied to a PO via API. This blocks the entire 'Invoice Manual' module flow.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "PDF Export (invoice type)",
+        "issue": "Could not be tested due to upstream invoice creation failure. Unverified."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "REGRESSION VERIFIED: /api/production-pos called only 2x on Production PO module open (threshold ≤5). Infinite-loop fix (DataTable.jsx fetcherRef) holds.",
+    "Production PO module renders within 6s with 62 POs in pagination, 0 console errors, 0 page errors, 0 'Memuat data...' stuck.",
+    "Auth: superadmin login OK, wrong password 401 with detail field, /api/auth/me OK.",
+    "Master Data CRUD: garment, buyer, 2 products, 2 accessories all created + listed successfully.",
+    "Production PO create: POST /api/production-pos returns 201 with 2 items + accepted po-accessories link (qty_needed=200).",
+    "Pagination envelope present on /api/production-pos and /api/products: items, total, page, per_page, total_pages.",
+    "PUT /api/production-pos/{id} status='Confirmed' OK.",
+    "Buyer Shipment M-1 (0-qty dispatch) correctly rejected 400 with Indonesian error message.",
+    "Buyer Shipment C-1 (phantom shipment without production) correctly rejected 400.",
+    "Payment endpoint reachable; partial+full payment flow blocked only by upstream invoice creation issue.",
+    "PDF export type=production-po: 200, content-type application/pdf, >1KB.",
+    "Smart Import upload endpoint reachable (200/422 acceptable).",
+    "27 list endpoints all return 200: garments, buyers, products, accessories, production-pos, vendor-shipments, buyer-shipments, production-jobs, production-returns, production-variances, invoices, payments, users, activity-logs, company-settings, dashboard, financial-recap, accounts-payable, accounts-receivable, distribusi-kerja, production-monitoring-v2, serial-list, pdf-export-configs, pdf-export-columns, roles, permissions, reminders.",
+    "PRODUKSI sidebar nav: Vendor Shipment, Buyer Shipment, Distribusi Kerja, Monitoring Produksi all render 0 errors.",
+    "LAPORAN & TOOLS sidebar nav: Laporan, Smart Import render 0 errors.",
+    "Cleanup: created PO/buyer/vendor/products/accessories deleted successfully."
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_comprehensive_erp.py",
+    "/app/test_reports/pytest/iter22_results.xml"
+  ],
+  "action_items": [
+    "[CRITICAL] Define `enrich_with_product_photos(items, db)` helper in server.py — likely should look up product photos by product_id and attach to each item dict. This unblocks GET /api/production-pos/{po_id} AND GET /api/vendor-shipments/{sid}.",
+    "[HIGH] Either add POST /api/manual-invoices endpoint OR make source_po_id optional in POST /api/invoices when invoice_type/type is manual. Without this, the entire Invoice Manual UI module cannot create invoices.",
+    "[MINOR] After fixing above, retest invoice/payment chain and PDF export type=invoice."
+  ],
+  "critical_code_review_comments": [
+    "server.py line 752 + 1215: `enrich_with_product_photos` is called but never defined — would have been caught by ruff/static analysis. Recommend running ruff before merging.",
+    "server.py is 5679 lines — should be split into modules (master_data.py, production.py, finance.py, etc.). File-size lint rule violation.",
+    "POST /api/invoices unconditionally requires source_po_id but the system has 'Invoice Manual' UI module — there's an architectural mismatch. Suggest splitting endpoints: POST /api/invoices/auto (system-generated, requires source_po_id) vs POST /api/manual-invoices (admin-created, free-form).",
+    "Buyer Shipment validation logic (C-1 cap + M-1 zero-qty reject) is well-implemented with clear Indonesian error messages — good.",
+    "Pagination envelope is consistent across endpoints — good. Some legacy endpoints (e.g., /api/production-jobs, /api/garments) appear to not paginate by default; verify frontend handles both shapes."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_comprehensive_erp.py (created)"
+  ],
+  "success_rate": {
+    "backend": "89% (49/55 pytest cases pass; 6 fail rooted in 2 underlying bugs)",
+    "frontend": "100% on critical regression (Production PO infinite-loop fix verified, 0 console errors, 2 API calls observed vs. infinite loop before)"
+  },
+  "test_credentials": "admin@garment.com / Admin@123 (superadmin, auto-seeded)",
+  "seed_data_creation": "Created and then cleaned up: 1 vendor (PT Vendor Sejahtera <ts>), 1 buyer (CV Buyer Mandiri <ts>), 2 products (KAOS-<ts>, JKT-<ts>), 2 accessories (Kancing Plastik <ts>, Resleting YKK <ts>), 1 PO (PO-TEST-<ts>) with 2 items + 1 po_accessory.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Two backend bugs block deeper E2E: (1) define enrich_with_product_photos to unblock PO/vendor-shipment detail GETs, (2) fix manual invoice creation path. Vendor shipment → inspection → job → progress → variance → buyer shipment → return chain was NOT fully tested end-to-end because creating a vendor shipment + inspection programmatically is multi-step (POST /api/vendor-shipments → confirm receive → POST /api/vendor-material-inspections → POST /api/production-jobs). After 2 critical fixes above, write a follow-up test that walks the full chain to verify I-1 defect-adjusted capacity, C-2 return cap, C-3 total_shipped_to_buyer aggregation, and variance Reported→Acknowledged→Resolved transitions.",
+  "rca of the issue": "GET /api/production-pos/{po_id}: server.py line 752 calls `enrich_with_product_photos(items, db)` but this symbol is undefined → NameError → 500. Same call on line 1215 (vendor-shipments detail). Reproduce: GET /api/production-pos/<any-existing-id> with valid Bearer token. Mitigation: implement helper that does `for it in items: if it.get('product_id'): photo = await db.products.find_one({'id': it['product_id']}, {'photo':1, 'photo_url':1, '_id':0}); it['product_photo'] = (photo or {}).get('photo') or (photo or {}).get('photo_url')` then `return items`."
+}
