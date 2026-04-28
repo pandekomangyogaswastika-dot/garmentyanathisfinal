@@ -52,6 +52,16 @@ Same trap latently affected every other module using `DataTable` server paginati
 Reproduced before fix → ~20+ duplicate calls in <5s, UI stuck on "Memuat data…".
 After fix → exactly 2 calls (React 18 strict-mode double-mount, normal), UI shows "Tidak ada data" empty state correctly. Cross-module check on Accounts Payable confirms no breakage.
 
+### Phase 12 follow-up bug fix (2026-04-28)
+**Iteration 22 testing agent** found:
+- **CRITICAL**: `GET /api/production-pos/{po_id}` and `GET /api/vendor-shipments/{sid}` returned 500 (`NameError: enrich_with_product_photos is not defined`). Function was called at server.py L752 + L1215 but never defined. Defined the helper near top of server.py (after `_run_list_query`); it batch-looks-up `products` by referenced product_ids and attaches `product_photo` / `product_photo_url` to each item dict. Verified: `GET /api/production-pos/{id}` now returns 200 with serialized PO doc.
+- **NOT A BUG (false positive)**: testing-agent flagged manual invoice as broken because `source_po_id` is required. By design — `ManualInvoiceModule.jsx` requires user to select a PO first (line 223), and `POST /api/invoices` correctly enforces this. No code change needed.
+
+### Iteration 22 verified
+- Production PO infinite-loop fix HOLDS (only 2 `/api/production-pos` calls on module open vs >20 before)
+- Auth, master-data CRUD, PO create, pagination envelope, buyer-shipment caps (M-1, C-1), payment endpoint, PDF export, smart-import upload all GREEN
+- Backend success rate after `enrich_with_product_photos` fix: ~96% (the 1 remaining "fail" was the false-positive manual-invoice case)
+
 ### Environment Setup (also done this session)
 - Installed missing backend dep: `rapidfuzz` (used by `routes/smart_import.py`)
 - Installed missing frontend deps: `@tanstack/react-virtual`, `@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities`

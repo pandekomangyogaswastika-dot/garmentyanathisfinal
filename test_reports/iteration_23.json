@@ -1,0 +1,74 @@
+{
+  "summary": "Iteration 23 — REGRESSION FIX VERIFIED + FULL E2E CHAIN PASSED. 15/16 backend tests pass (94%). enrich_with_product_photos helper now defined → GET /api/production-pos/{id} and GET /api/vendor-shipments/{sid} both 200. Walked the entire chain end-to-end: PO Confirmed → vendor shipment (qty=110) → mark Received → material inspection → production job auto-created with available_qty=110 → progress (overproduction 102 OK) → defect report (3 pcs) → I-1 cap enforced (stale produced+6 rejected, +5 accepted = 107) → variance Reported→Acknowledged→Resolved → buyer shipment M-1 0-qty rejected, dispatch 80 OK, +28 (108 > 107) rejected (C-1), +27 (107) OK → C-3 total_shipped_to_buyer=107 verified on /api/production-job-items → H-1 PO remaining_qty non-negative → production return 10 OK, 200 rejected (C-2 cap), 0 and -5 rejected (H-4) → manual invoice POST /api/invoices (with source_po_id) 201 + total=10,000,000 → PUT update notes 200 → payment partial 4M then full remainder → financial recap 200 → PDF export production-po and vendor-shipment 200 (>1KB). STRICT I-1 spec scenario also verified separately: ordered=100 + defect=3 → progress new_total=99 rejected with 'melebihi material usable (97 pcs)', new_total=97 accepted. Frontend smoke: Production PO module loads in <4s, only 2 /api/production-pos calls on open, 0 additional calls over 10s (infinite-loop fix holds), no 500 NameError on UI.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/export-pdf?type=invoice",
+        "issue": "Returns 400 'Unknown PDF type: invoice'. Available types: production-po, vendor-shipment, buyer-shipment, buyer-shipment-dispatch, production-return, material-request, production-report, report-*. Invoice PDF export not implemented in /app/backend/routes/pdf_exports.py. Spec/UI may expect it for finance flows.",
+        "priority": "MEDIUM"
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "REGRESSION: GET /api/production-pos/{po_id} → 200 (was 500). enrich_with_product_photos defined at server.py L238.",
+    "REGRESSION: GET /api/vendor-shipments/{sid} → 200 after creating a shipment.",
+    "FULL CHAIN setup: vendor + buyer + 2 products + 1 accessory + PO qty=110 created, status='Confirmed' OK.",
+    "POST /api/vendor-shipments qty_sent=110 with NORMAL guard satisfied → 201.",
+    "PUT /api/vendor-shipments status=Received → 200.",
+    "POST /api/vendor-material-inspections received=110 missing=0 → 201, sets shipment.inspection_status='Inspected'.",
+    "POST /api/production-jobs with vendor_shipment_id → 201, available_qty=110 on job_item.",
+    "POST /api/production-progress completed=102 (overproduction relative to ordered=100, but within available=110) → 201, new_total=102.",
+    "I-1 cap (with defect_qty=3, effective_max=107): +6 (108) rejected 400, +5 (107) accepted 201.",
+    "STRICT I-1 (available=100 defect=3): new_total=99 rejected 400 with 'melebihi material usable (97 pcs)'; new_total=97 accepted 201.",
+    "POST /api/production-variances type=OVERPRODUCTION → 201; PUT status='Acknowledged' then 'Resolved' → 200, 200.",
+    "M-1: 0-qty buyer dispatch rejected 400.",
+    "C-1: dispatch 80 OK → +28 (would exceed 107 cap) rejected 400 → +27 (total 107) OK.",
+    "C-3: GET /api/production-job-items returns shipped_to_buyer=107 and total_produced_qty=107.",
+    "H-1: GET /api/production-pos/{id} → remaining/over-shipped fields non-negative.",
+    "C-2: production return qty=10 OK; qty=200 (> max_returnable=97) rejected 400.",
+    "H-4: production return qty=0 and qty=-5 both rejected 400.",
+    "Manual invoice POST /api/invoices with source_po_id, invoice_category=BUYER → 201, total_amount = 100*100000 = 10,000,000.",
+    "PUT /api/invoices/{id} notes update → 200.",
+    "Payment: partial 4,000,000 → 200/201; full remainder 6,000,000 → 200/201; status transitions to 'Paid'/'Partial'.",
+    "GET /api/financial-recap → 200 with aggregate dict.",
+    "PDF /api/export-pdf?type=production-po → 200, application/pdf, >1KB.",
+    "PDF /api/export-pdf?type=vendor-shipment → 200, >500B.",
+    "FRONTEND: login OK; Production PO module renders <4s; only 2 /api/production-pos requests on initial load; 0 additional calls in next 10s (infinite-loop fix verified); no 500/NameError observable in UI."
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration23_e2e.py",
+    "/app/test_reports/pytest/iter23_results.xml"
+  ],
+  "action_items": [
+    "[MEDIUM] Implement /api/export-pdf?type=invoice in /app/backend/routes/pdf_exports.py — register an 'invoice' renderer mirroring the production-po template (header + invoice_items + totals + payment status). Currently returns 400 'Unknown PDF type'.",
+    "[OPTIONAL/CHORE] server.py is 5706 lines — split into modules (master_data, production, finance) per prior code-review note."
+  ],
+  "critical_code_review_comments": [
+    "enrich_with_product_photos fix is clean: uses $in for batch lookup, excludes _id, no-ops on empty/no product_id — good.",
+    "POST /api/vendor-shipments has thoughtful NORMAL over-ship guard with duplicate po_item_id rejection — well-implemented.",
+    "POST /api/vendor-material-inspections auto-creates REQ-RPL material request for missing materials AND REQ-ACC for accessories — H-2 fix verified working in code (not exercised in tests since we used missing=0).",
+    "POST /api/production-progress correctly enforces I-1 with defect-adjusted capacity (effective_max = available_qty - sum(defect_qty)).",
+    "POST /api/production-returns enforces C-2 (max_returnable = total_shipped - already_returned) and H-4 (qty<1 reject) cleanly.",
+    "Buyer shipment C-1 cap aggregates produced across all job_items for a po_item — covers child jobs correctly.",
+    "PDF export module is missing invoice renderer despite invoice flow being core to finance — should be added for parity."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration23_e2e.py (created)"
+  ],
+  "success_rate": {
+    "backend": "94% (15/16 — only failure is missing PDF type=invoice, no functional regression)",
+    "frontend": "100% on smoke test (Production PO loads, no infinite loop, no 500/NameError)"
+  },
+  "test_credentials": "admin@garment.com / Admin@123 (superadmin)",
+  "seed_data_creation": "Created with TS suffix and cleaned up via fixture teardown: 1 vendor (PT Test Vendor <ts>), 1 buyer (CV Test Buyer <ts>), 2 products (KAOS-A-<ts>, KAOS-B-<ts>), 1 accessory (Kancing-<ts>), 2 POs (PO-CHAIN-<ts>-110 qty=110, PO-I1-<ts>-100 qty=100), 2 vendor shipments (VS-CH-<ts>, VS-I1-<ts>), 2 production jobs, 1 buyer shipment (BS-<ts>), 1 production return, 1 manual invoice. All deleted on test_iteration23_e2e.py teardown.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All backend invariants (I-1, M-1, C-1, C-2, C-3, H-1, H-4) verified on real E2E flow. enrich_with_product_photos regression is FIXED for both production-pos detail and vendor-shipments detail. Only outstanding gap: invoice PDF export not implemented (returns 400 with available_types list). The full chain test file at /app/backend/tests/test_iteration23_e2e.py is reusable — run with `pytest backend/tests/test_iteration23_e2e.py -v` after any future changes to vendor/production/invoice flows. Note: the test PUTs vendor-shipment status='Received' via the generic update endpoint — there is no dedicated 'mark received' endpoint and the inspection endpoint does not require status='Received' (only the production-jobs endpoint does, line 1763).",
+  "rca of the issue": "PDF invoice gap: /app/backend/routes/pdf_exports.py only registers types ['production-po','vendor-shipment','buyer-shipment','buyer-shipment-dispatch','production-return','material-request','production-report','report-*']. No 'invoice' renderer registered. Reproduction: `curl -H 'Authorization: Bearer <token>' '$BASE/api/export-pdf?type=invoice&id=<inv_id>'` → 400 {error: 'Unknown PDF type: invoice', available_types: [...]}. Mitigation: add an invoice handler in pdf_exports.py that fetches the invoice + payments + adjustments and renders header (invoice_number, customer, dates) + line items + totals + payment status using the existing reportlab/weasyprint scaffolding."
+}
